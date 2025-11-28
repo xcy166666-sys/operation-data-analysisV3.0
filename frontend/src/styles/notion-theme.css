@@ -1,0 +1,32 @@
+/* 基础样式 */
+:root {
+  --notion-bg-primary: #ffffff;
+  --notion-bg-secondary: #f7f6f3;
+  --notion-text-primary: #37352f;
+  --notion-text-secondary: #787774;
+  --notion-border: #e9e9e7;
+  --notion-space-xs: 4px;
+  --notion-space-sm: 8px;
+  --notion-space-md: 12px;
+  --notion-space-lg: 16px;
+  --notion-space-xl: 20px;
+  --notion-space-2xl: 24px;
+  --notion-space-3xl: 32px;
+  --notion-radius-sm: 4px;
+  --notion-radius-md: 6px;
+  --notion-radius-lg: 8px;
+  --notion-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --notion-font-sm: 14px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--notion-bg-secondary);
+}
+

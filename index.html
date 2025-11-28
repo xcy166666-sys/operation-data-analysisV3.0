@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运营数据分析系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .title {
+            color: #333;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .feature {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .feature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature h3 {
+            color: #667eea;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 500;
+            margin: 1rem 0.5rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .status {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #e8f5e8;
+            border-radius: 10px;
+            border-left: 4px solid #4caf50;
+        }
+
+        .status h3 {
+            color: #2e7d32;
+            margin-bottom: 0.5rem;
+        }
+
+        .status p {
+            color: #388e3c;
+            margin: 0.25rem 0;
+        }
+
+        .error {
+            background: #ffeaea;
+            border-left-color: #f44336;
+        }
+
+        .error h3 {
+            color: #c62828;
+        }
+
+        .error p {
+            color: #d32f2f;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 2rem;
+                margin: 1rem;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>运营数据分析系统</h1>
+    </header>
+
+    <main class="main">
+        <div class="container">
+            <h2 class="title">系统已成功部署！</h2>
+            <p class="subtitle">
+                支持Excel数据上传、AI智能分析和专业报告生成的运营数据分析工具
+            </p>
+
+            <div class="features">
+                <div class="feature">
+                    <h3>📊 单文件分析</h3>
+                    <p>上传Excel/CSV，智能生成分析报告</p>
+                </div>
+                <div class="feature">
+                    <h3>📈 批量分析</h3>
+                    <p>多Sheet文件自动拆分，独立报告</p>
+                </div>
+                <div class="feature">
+                    <h3>🤖 AI驱动</h3>
+                    <p>集成Dify等AI平台，智能分析</p>
+                </div>
+                <div class="feature">
+                    <h3>📄 报告导出</h3>
+                    <p>支持PDF/PNG格式，包含图表</p>
+                </div>
+            </div>
+
+            <div>
+                <a href="http://localhost:8000/docs" class="btn" target="_blank">
+                    📚 API文档
+                </a>
+                <a href="http://localhost:8000/health" class="btn btn-secondary" target="_blank">
+                    💗 健康检查
+                </a>
+            </div>
+
+            <div id="status" class="status">
+                <h3>🔍 正在检查后端服务状态...</h3>
+                <p>请稍候，正在连接到后端API...</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 检查后端API状态
+        async function checkBackendStatus() {
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                const response = await fetch('http://localhost:8000/health');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    statusDiv.className = 'status';
+                    statusDiv.innerHTML = `
+                        <h3>✅ 后端服务运行正常</h3>
+                        <p>服务状态: ${data.status || 'healthy'}</p>
+                        <p>服务名称: 运营数据分析系统</p>
+                        <p>版本: v1.0.0</p>
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.innerHTML = `
+                    <h3>❌ 后端服务连接失败</h3>
+                    <p>错误信息: ${error.message}</p>
+                    <p>请检查后端服务是否正常运行</p>
+                    <p>API地址: http://localhost:8000</p>
+                `;
+            }
+        }
+
+        // 页面加载完成后检查状态
+        document.addEventListener('DOMContentLoaded', checkBackendStatus);
+        
+        // 每30秒检查一次状态
+        setInterval(checkBackendStatus, 30000);
+    </script>
+</body>
+</html>
