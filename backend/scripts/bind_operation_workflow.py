@@ -15,11 +15,14 @@ from app.models.user import User
 # Dify 工作流配置（Chatflow类型）
 WORKFLOW_CONFIG = {
     "name": "运营数据分析工作流",
-    "api_url": "http://118.89.16.95/v1",
     "api_key": "app-G5TRX6MyLsQdfj4V4NRWAplZ",
-    "workflow_id": "1",  # Chatflow ID
+    "url_file": "http://118.89.16.95/v1/files/upload",  # 文件上传URL
+    "url_work": "http://118.89.16.95/v1/chat-messages",  # 工作流URL
+    "file_param": "excell",  # 文件参数名
+    "query_param": "query",  # 对话参数名
+    "workflow_id": "1",  # Chatflow ID（固定为1，实际使用url_work）
     "workflow_type": "chatflow",  # Chatflow类型
-    "input_field": "excell,query",  # 文件参数：excell，对话参数：query
+    "input_field": "excell,query",  # 兼容旧格式
     "description": "运营数据分析工作流，用于分析Excel文件并生成报告"
 }
 
@@ -54,8 +57,11 @@ def bind_workflow(user_id: int = 1):
                 category="operation",
                 platform="dify",
                 config={
-                    "api_url": WORKFLOW_CONFIG["api_url"],
                     "api_key": WORKFLOW_CONFIG["api_key"],
+                    "url_file": WORKFLOW_CONFIG["url_file"],
+                    "url_work": WORKFLOW_CONFIG["url_work"],
+                    "file_param": WORKFLOW_CONFIG["file_param"],
+                    "query_param": WORKFLOW_CONFIG["query_param"],
                     "workflow_id": WORKFLOW_CONFIG["workflow_id"],
                     "workflow_type": WORKFLOW_CONFIG["workflow_type"],
                     "input_field": WORKFLOW_CONFIG["input_field"]
@@ -70,13 +76,18 @@ def bind_workflow(user_id: int = 1):
             print(f"创建工作流成功: ID={workflow.id}, Name={workflow.name}")
         else:
             # 更新工作流配置
+            from sqlalchemy.orm.attributes import flag_modified
             workflow.config = {
-                "api_url": WORKFLOW_CONFIG["api_url"],
                 "api_key": WORKFLOW_CONFIG["api_key"],
+                "url_file": WORKFLOW_CONFIG["url_file"],
+                "url_work": WORKFLOW_CONFIG["url_work"],
+                "file_param": WORKFLOW_CONFIG["file_param"],
+                "query_param": WORKFLOW_CONFIG["query_param"],
                 "workflow_id": WORKFLOW_CONFIG["workflow_id"],
                 "workflow_type": WORKFLOW_CONFIG["workflow_type"],
                 "input_field": WORKFLOW_CONFIG["input_field"]
             }
+            flag_modified(workflow, "config")
             db.commit()
             db.refresh(workflow)
             print(f"更新工作流配置成功: ID={workflow.id}")
@@ -94,7 +105,11 @@ def bind_workflow(user_id: int = 1):
         print(f"  - 工作流ID: {workflow.id}")
         print(f"  - 工作流名称: {workflow.name}")
         print(f"  - 工作流类型: {WORKFLOW_CONFIG['workflow_type']}")
-        print(f"  - Dify API地址: {WORKFLOW_CONFIG['api_url']}")
+        print(f"  - API Key: {WORKFLOW_CONFIG['api_key']}")
+        print(f"  - 文件上传URL: {WORKFLOW_CONFIG['url_file']}")
+        print(f"  - 工作流URL: {WORKFLOW_CONFIG['url_work']}")
+        print(f"  - 文件参数名: {WORKFLOW_CONFIG['file_param']}")
+        print(f"  - 对话参数名: {WORKFLOW_CONFIG['query_param']}")
         print(f"  - Dify工作流ID: {WORKFLOW_CONFIG['workflow_id']}")
         print(f"  - 输入变量: {WORKFLOW_CONFIG['input_field']}")
         

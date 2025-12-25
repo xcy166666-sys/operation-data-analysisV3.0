@@ -64,8 +64,8 @@ watch(() => props.currentIndex, (newIndex) => {
   activeTab.value = String(newIndex)
 })
 
-const handleTabChange = (name: string) => {
-  const index = parseInt(name)
+const handleTabChange = (name: string | number) => {
+  const index = typeof name === 'string' ? parseInt(name) : name
   emit('tab-change', index)
 }
 

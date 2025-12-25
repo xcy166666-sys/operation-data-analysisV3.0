@@ -48,10 +48,10 @@ async def get_users(
     
     # 分页
     offset = (page - 1) * page_size
-    # 排序：admin7 永远排在第一位，其他用户按创建时间倒序
+    # 排序：超级管理员（is_admin=True）永远排在第一位，其他用户按创建时间倒序
     from sqlalchemy import case
     users = query.order_by(
-        case((User.username == 'admin7', 0), else_=1),
+        case((User.is_admin == True, 0), else_=1),  # 超级管理员排第一
         User.created_at.desc()
     ).offset(offset).limit(page_size).all()
     
@@ -174,6 +174,13 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
+        )
+    
+    # 不能删除超级管理员
+    if user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能删除超级管理员"
         )
     
     # 删除用户（级联删除相关数据）

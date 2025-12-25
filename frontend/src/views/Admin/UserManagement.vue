@@ -3,13 +3,6 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <h1 class="page-title">用户管理</h1>
-      <el-button
-        type="danger"
-        :icon="SwitchButton"
-        @click="handleLogout"
-      >
-        退出登录
-      </el-button>
     </div>
 
     <!-- 搜索和操作栏 -->
@@ -44,8 +37,22 @@
         style="width: 100%"
         empty-text="暂无用户数据"
       >
-        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column label="ID" width="80">
+          <template #default="{ $index }">
+            {{ (pagination.page - 1) * pagination.page_size + $index + 1 }}
+          </template>
+        </el-table-column>
         <el-table-column prop="username" label="用户名" width="150" />
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_admin" type="danger" size="small">
+              超级管理员
+            </el-tag>
+            <el-tag v-else type="info" size="small">
+              普通用户
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="email" label="邮箱" width="200">
           <template #default="{ row }">
             {{ row.email || '-' }}
@@ -75,7 +82,7 @@
               type="danger"
               link
               size="small"
-              :disabled="row.id === currentUserId"
+              :disabled="row.id === currentUserId || row.is_admin"
               @click="handleDelete(row)"
             >
               删除
@@ -163,16 +170,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { SwitchButton, Search, Plus } from '@element-plus/icons-vue'
+import { Search, Plus } from '@element-plus/icons-vue'
 import { getUserList, createUser, updateUser, deleteUser } from '@/api/user'
-import { logout } from '@/api/auth'
 import { useAuthStore } from '@/store/auth'
-import type { User, UserCreate, UserUpdate } from '@/types'
+import type { User, UserCreate, UserUpdate, ApiResponse } from '@/types'
 import type { FormInstance, FormRules } from 'element-plus'
 
-const router = useRouter()
 const authStore = useAuthStore()
 
 const loading = ref(false)
@@ -242,14 +246,16 @@ const loadUserList = async () => {
       page_size: pagination.page_size,
       search: searchKeyword.value || undefined
     }
-    const res = await getUserList(params)
+    const res = await getUserList(params) as unknown as ApiResponse<any>
     
     if (res.success && res.data) {
-      userList.value = res.data.items
-      pagination.total = res.data.pagination.total
-      pagination.total_pages = res.data.pagination.total_pages
+      const userData = res.data
+      userList.value = userData.items
+      pagination.total = userData.pagination.total
+      pagination.total_pages = userData.pagination.total_pages
     } else {
-      ElMessage.error(res.message || '获取用户列表失败')
+      const listErrorResponse = res as unknown as ApiResponse<any>
+      ElMessage.error(listErrorResponse.message || '获取用户列表失败')
     }
   } catch (error: any) {
     console.error('获取用户列表失败:', error)
@@ -316,12 +322,13 @@ const handleDelete = async (user: User) => {
       }
     )
     
-    const res = await deleteUser(user.id)
+    const res = await deleteUser(user.id) as unknown as ApiResponse<any>
     if (res.success) {
       ElMessage.success('删除用户成功')
       loadUserList()
     } else {
-      ElMessage.error(res.message || '删除用户失败')
+        const deleteErrorResponse = res as unknown as ApiResponse<any>
+        ElMessage.error(deleteErrorResponse.message || '删除用户失败')
     }
   } catch (error: any) {
     if (error !== 'cancel') {
@@ -350,13 +357,14 @@ const handleSubmit = async () => {
           email: formData.email || undefined,
           full_name: formData.full_name || undefined
         }
-        const res = await updateUser(editingUserId.value!, updateData)
+        const res = await updateUser(editingUserId.value!, updateData) as unknown as ApiResponse<any>
         if (res.success) {
           ElMessage.success('更新用户成功')
           dialogVisible.value = false
           loadUserList()
         } else {
-          ElMessage.error(res.message || '更新用户失败')
+          const updateErrorResponse = res as unknown as ApiResponse<any>
+          ElMessage.error(updateErrorResponse.message || '更新用户失败')
         }
       } else {
         // 创建用户
@@ -366,13 +374,14 @@ const handleSubmit = async () => {
           email: formData.email || undefined,
           full_name: formData.full_name || undefined
         }
-        const res = await createUser(createData)
+        const res = await createUser(createData) as unknown as ApiResponse<any>
         if (res.success) {
           ElMessage.success('创建用户成功')
           dialogVisible.value = false
           loadUserList()
         } else {
-          ElMessage.error(res.message || '创建用户失败')
+          const createErrorResponse = res as unknown as ApiResponse<any>
+          ElMessage.error(createErrorResponse.message || '创建用户失败')
         }
       }
     } catch (error: any) {
@@ -382,42 +391,6 @@ const handleSubmit = async () => {
       submitting.value = false
     }
   })
-}
-
-// 退出登录
-const handleLogout = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '确定要退出登录吗？',
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    
-    // 调用退出登录API（可选）
-    try {
-      await logout()
-    } catch (error) {
-      // 即使API调用失败，也继续清除本地认证信息
-      console.warn('退出登录API调用失败:', error)
-    }
-    
-    // 清除本地认证信息
-    authStore.clearAuth()
-    
-    // 跳转到登录页面
-    router.push({ name: 'login' })
-    
-    ElMessage.success('已退出登录')
-  } catch (error) {
-    // 用户取消操作
-    if (error !== 'cancel') {
-      console.error('退出登录失败:', error)
-    }
-  }
 }
 
 // 初始化

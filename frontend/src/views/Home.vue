@@ -73,7 +73,7 @@
             <el-icon class="card-icon" :size="48">
               <Files />
             </el-icon>
-            <h2>定制化批量数据分析</h2>
+            <h2>黄伟斌定制款数据分析工具</h2>
             <p>上传包含多个Sheet的Excel文件，批量生成分析报告</p>
             <ul class="feature-list">
               <li>自动拆分多个Sheet</li>
@@ -101,15 +101,15 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const goToSingleAnalysis = () => {
-  router.push({ name: 'operation' })
+  router.push({ name: 'operation', query: { new: 'true' } })
 }
 
 const goToBatchAnalysis = () => {
-  router.push({ name: 'operation-batch' })
+  router.push({ name: 'operation-batch', query: { new: 'true' } })
 }
 
 const goToCustomBatchAnalysis = () => {
-  router.push({ name: 'operation-custom-batch' })
+  router.push({ name: 'operation-custom-batch', query: { new: 'true' } })
 }
 
 // 退出登录

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "my-chrome": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\chunyu.xing\\.npm-global\\node_modules\\@modelcontextprotocol\\server-puppeteer\\dist\\index.js"
+      ],
+      "env": {},
+      "disabled": false,
+      "autoApprove": ["puppeteer_navigate", "puppeteer_screenshot", "puppeteer_click", "puppeteer_fill", "puppeteer_select", "puppeteer_hover", "puppeteer_evaluate"]
+    }
+  }
+}

@@ -288,6 +288,9 @@ async def delete_session(
     """
     删除会话（简化版，移除project_id参数）
     """
+    from app.models.session_version import AnalysisSessionVersion
+    from app.models.dialog_history import DialogHistory
+    
     logger.info(f"[运营数据分析] 删除会话 - session_id={id}, user_id={current_user.id}")
     
     try:
@@ -305,7 +308,37 @@ async def delete_session(
                 detail="会话不存在"
             )
         
-        # 2. 删除会话
+        # 2. 先删除所有关联的对话历史记录
+        try:
+            dialog_histories = db.query(DialogHistory).filter(
+                DialogHistory.session_id == id
+            ).all()
+            
+            if dialog_histories:
+                logger.info(f"[运营数据分析] 找到 {len(dialog_histories)} 条对话历史，准备删除")
+                for dialog in dialog_histories:
+                    db.delete(dialog)
+                db.flush()
+                logger.info(f"[运营数据分析] 对话历史删除成功")
+        except Exception as de:
+            logger.warning(f"[运营数据分析] 删除对话历史时出错: {str(de)}")
+        
+        # 3. 删除所有关联的版本
+        try:
+            versions = db.query(AnalysisSessionVersion).filter(
+                AnalysisSessionVersion.session_id == id
+            ).all()
+            
+            if versions:
+                logger.info(f"[运营数据分析] 找到 {len(versions)} 个版本，准备删除")
+                for version in versions:
+                    db.delete(version)
+                db.flush()
+                logger.info(f"[运营数据分析] 版本删除成功")
+        except Exception as ve:
+            logger.warning(f"[运营数据分析] 删除版本时出错: {str(ve)}")
+        
+        # 4. 删除会话
         db.delete(conversation)
         db.commit()
         
@@ -319,11 +352,255 @@ async def delete_session(
         raise
     except Exception as e:
         logger.error(f"[运营数据分析] 删除会话失败 - session_id={id}, error={str(e)}")
+        import traceback
+        logger.error(f"[运营数据分析] 错误堆栈:\n{traceback.format_exc()}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"删除会话失败: {str(e)}"
         )
+
+
+# ==================== 会话版本管理API ====================
+
+@router.get("/sessions/{id}/versions", response_model=SuccessResponse)
+async def get_session_versions(
+    id: int = PathParam(..., description="会话ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取会话的所有版本列表
+    """
+    from app.models.session_version import AnalysisSessionVersion
+    
+    logger.info(f"[版本管理] 获取版本列表 - session_id={id}, user_id={current_user.id}")
+    
+    try:
+        # 1. 验证会话存在且属于当前用户
+        function_key = "operation_data_analysis"
+        conversation = db.query(AnalysisSession).filter(
+            AnalysisSession.id == id,
+            AnalysisSession.function_key == function_key,
+            AnalysisSession.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在或无权限访问"
+            )
+        
+        # 2. 获取所有版本
+        versions = db.query(AnalysisSessionVersion).filter(
+            AnalysisSessionVersion.session_id == id
+        ).order_by(AnalysisSessionVersion.version_no.desc()).all()
+        
+        # 3. 找到当前版本（最新的）
+        current_version_id = versions[0].id if versions else None
+        
+        # 4. 构建响应数据
+        versions_data = []
+        for v in versions:
+            versions_data.append({
+                "id": v.id,
+                "version_no": v.version_no,
+                "summary": v.summary,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "is_current": v.id == current_version_id
+            })
+        
+        logger.info(f"[版本管理] 获取版本列表成功 - session_id={id}, count={len(versions_data)}")
+        
+        return SuccessResponse(
+            data=versions_data,
+            message="获取版本列表成功"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[版本管理] 获取版本列表失败 - session_id={id}, error={str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取版本列表失败: {str(e)}"
+        )
+
+
+@router.get("/sessions/{id}/versions/{version_id}", response_model=SuccessResponse)
+async def get_session_version_detail(
+    id: int = PathParam(..., description="会话ID"),
+    version_id: int = PathParam(..., description="版本ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取某个版本的详细内容
+    """
+    from app.models.session_version import AnalysisSessionVersion
+    
+    logger.info(f"[版本管理] 获取版本详情 - session_id={id}, version_id={version_id}, user_id={current_user.id}")
+    
+    try:
+        # 1. 验证会话存在且属于当前用户
+        function_key = "operation_data_analysis"
+        conversation = db.query(AnalysisSession).filter(
+            AnalysisSession.id == id,
+            AnalysisSession.function_key == function_key,
+            AnalysisSession.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在或无权限访问"
+            )
+        
+        # 2. 获取指定版本
+        version = db.query(AnalysisSessionVersion).filter(
+            AnalysisSessionVersion.id == version_id,
+            AnalysisSessionVersion.session_id == id
+        ).first()
+        
+        if not version:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="版本不存在"
+            )
+        
+        # 3. 构建响应数据
+        version_data = {
+            "id": version.id,
+            "version_no": version.version_no,
+            "summary": version.summary,
+            "report_text": version.report_text,
+            "report_html_charts": version.report_html_charts,
+            "report_charts_json": version.report_charts_json,
+            "created_at": version.created_at.isoformat() if version.created_at else None
+        }
+        
+        logger.info(f"[版本管理] 获取版本详情成功 - version_id={version_id}, version_no={version.version_no}")
+        
+        return SuccessResponse(
+            data=version_data,
+            message="获取版本详情成功"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[版本管理] 获取版本详情失败 - version_id={version_id}, error={str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取版本详情失败: {str(e)}"
+        )
+
+
+@router.post("/sessions/{id}/versions", response_model=SuccessResponse)
+async def create_session_version(
+    id: int = PathParam(..., description="会话ID"),
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    创建新版本（保存当前报告状态）
+    payload: {
+        summary?: string  # 版本说明
+        report_text?: string  # 报告文本内容
+        report_html_charts?: string  # HTML图表内容
+        report_charts_json?: any  # JSON图表配置
+    }
+    """
+    from app.models.session_version import AnalysisSessionVersion
+    from app.services.dialog_manager import DialogManager
+    
+    logger.info(f"[版本管理] 创建新版本 - session_id={id}, user_id={current_user.id}")
+    
+    try:
+        # 1. 验证会话存在且属于当前用户
+        function_key = "operation_data_analysis"
+        conversation = db.query(AnalysisSession).filter(
+            AnalysisSession.id == id,
+            AnalysisSession.function_key == function_key,
+            AnalysisSession.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在或无权限访问"
+            )
+        
+        # 2. 获取当前最大版本号
+        max_version = db.query(AnalysisSessionVersion).filter(
+            AnalysisSessionVersion.session_id == id
+        ).order_by(AnalysisSessionVersion.version_no.desc()).first()
+        
+        new_version_no = (max_version.version_no + 1) if max_version else 1
+        
+        # 3. 如果没有提供报告内容，尝试从会话消息中获取
+        report_text = payload.get("report_text")
+        report_html_charts = payload.get("report_html_charts")
+        report_charts_json = payload.get("report_charts_json")
+        
+        if not report_text and conversation.messages:
+            # 从最后一条 assistant 消息获取
+            for msg in reversed(conversation.messages):
+                if msg.get("role") == "assistant":
+                    report_text = msg.get("content", "")
+                    report_charts_json = msg.get("charts")
+                    break
+        
+        # 4. 创建新版本
+        new_version = AnalysisSessionVersion(
+            session_id=id,
+            version_no=new_version_no,
+            summary=payload.get("summary", f"版本 {new_version_no}"),
+            report_text=report_text,
+            report_html_charts=report_html_charts,
+            report_charts_json=report_charts_json,
+            created_by=current_user.id
+        )
+        db.add(new_version)
+        db.commit()
+        db.refresh(new_version)
+        
+        # 5. 在对话历史中添加版本保存点标记
+        dialog_manager = DialogManager()
+        dialog_manager.save_message_to_db(
+            db=db,
+            session_id=id,
+            role="system",
+            content=f"📌 保存版本 V{new_version_no}: {new_version.summary}",
+            extra_data={
+                "type": "version_marker",
+                "version_id": new_version.id,
+                "version_no": new_version_no,
+                "summary": new_version.summary
+            },
+            version_id=new_version.id
+        )
+        
+        logger.info(f"[版本管理] 创建版本成功 - session_id={id}, version_id={new_version.id}, version_no={new_version_no}")
+        
+        return SuccessResponse(
+            data={
+                "id": new_version.id,
+                "version_no": new_version.version_no,
+                "summary": new_version.summary,
+                "created_at": new_version.created_at.isoformat() if new_version.created_at else None
+            },
+            message=f"版本 V{new_version_no} 创建成功"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[版本管理] 创建版本失败 - session_id={id}, error={str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"创建版本失败: {str(e)}"
+        )
+
 
 
 @router.post("/upload", response_model=SuccessResponse)
@@ -414,184 +691,102 @@ async def generate_report(
     session_id: int = Form(...),
     file_id: int = Form(...),
     analysis_request: str = Form(...),
+    chart_customization_prompt: str = Form(default=""),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    生成分析报告（简化版，移除project_id参数）
-    调用Dify工作流处理Excel文件并生成报告
+    生成分析报告（使用阿里百炼API）
+    上传Excel文件到阿里百炼大模型，生成文字报告和HTML图表
     """
+    from app.services.bailian_service import BailianService
+
     logger.info(f"[运营数据分析] 生成报告 - session_id={session_id}, file_id={file_id}, user_id={current_user.id}")
     logger.info(f"[运营数据分析] 分析需求: {analysis_request[:100]}...")
-    
+
     try:
-        # 1. 获取绑定的Dify工作流（优先使用用户配置，如果没有则使用全局配置）
         function_key = "operation_data_analysis"
-        binding = WorkflowService.get_function_workflow(db, function_key, current_user.id)
-        
-        if not binding:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="尚未配置运营数据分析工作流，请在系统设置中配置"
-            )
-        
-        workflow = WorkflowService.get_workflow_by_id(db, binding.workflow_id)
-        if not workflow or not workflow.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="工作流不存在或已禁用"
-            )
-        
-        if workflow.platform != "dify":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"当前工作流平台为 {workflow.platform}，仅支持 Dify 平台"
-            )
-        
-        logger.info(f"[运营数据分析] 找到工作流 - workflow_id={workflow.id}, name={workflow.name}")
-        
-        # 2. 读取上传的文件
+
+        # 1. 读取上传的文件
         upload_dir = Path(f"uploads/operation/project_{DEFAULT_PROJECT_ID}")
         file_path = None
-        
+
         if upload_dir.exists():
             for f in upload_dir.iterdir():
                 if f.is_file() and str(session_id) in f.stem:
                     file_path = f
                     break
-        
+
         if not file_path or not file_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="文件不存在，请重新上传"
             )
-        
+
         logger.info(f"[运营数据分析] 找到文件 - file_path={file_path}")
-        
-        # 3. 准备Dify工作流输入
-        workflow_config = workflow.config
-        api_key = workflow_config.get("api_key")
-        url_file = workflow_config.get("url_file")  # 文件上传URL
-        url_work = workflow_config.get("url_work")  # 工作流URL
-        file_param = workflow_config.get("file_param", "excell")  # 文件参数名
-        query_param = workflow_config.get("query_param", "query")  # 对话参数名
-        workflow_type = workflow_config.get("workflow_type", "chatflow")
-        
-        # 兼容旧配置格式
-        if not url_file:
-            api_url = workflow_config.get("api_url")
-            if api_url:
-                url_file = f"{api_url.rstrip('/')}/files/upload"
-        if not url_work:
-            api_url = workflow_config.get("api_url")
-            if api_url:
-                url_work = f"{api_url.rstrip('/')}/chat-messages"
-        
-        if not all([api_key, url_file, url_work]):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="工作流配置不完整，请检查API Key、文件上传URL和工作流URL"
-            )
-        
-        # 生成Dify用户标识（移除project_id参数）
-        dify_user = DifyService.generate_user_id(
-            user_id=current_user.id,
-            function_key=function_key,
-            conversation_id=session_id
+
+        # 2. 调用阿里百炼API生成文字报告
+        bailian_service = BailianService()
+
+        logger.info(f"[运营数据分析] 调用阿里百炼API生成文字报告...")
+        text_result = await bailian_service.analyze_excel_and_generate_text_report(
+            file_path=str(file_path),
+            user_prompt=analysis_request
         )
-        
-        # 根据工作流类型处理文件
-        if workflow_type == "chatflow":
-            # Chatflow: 先上传文件到Dify
-            logger.info(f"[运营数据分析] 上传文件到Dify - file_path={file_path}, url={url_file}")
-            upload_result = await DifyService.upload_file(
-                api_url=url_file,  # 直接使用用户配置的文件上传URL
-                api_key=api_key,
-                file_path=str(file_path),
-                file_name=file_path.name,
-                user_id=dify_user
-            )
-            
-            if not upload_result.get("success"):
-                error_msg = upload_result.get("error", "文件上传失败")
-                logger.error(f"[运营数据分析] 文件上传到Dify失败 - {error_msg}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"文件上传到Dify失败: {error_msg}"
-                )
-            
-            dify_file_id = upload_result.get("data", {}).get("id")
-            if not dify_file_id:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Dify文件上传成功但未返回文件ID"
-                )
-            
-            logger.info(f"[运营数据分析] 文件上传成功 - Dify文件ID: {dify_file_id}")
-            
-            # Chatflow输入参数：使用用户配置的参数名
-            inputs = {
-                file_param: dify_file_id,  # 文件参数名（用户配置）
-                query_param: analysis_request,  # 对话参数名（用户配置）
-            }
-        else:
-            # Workflow: 读取文件内容并转换为base64
-            with open(file_path, "rb") as f:
-                file_content = f.read()
-                file_base64 = base64.b64encode(file_content).decode('utf-8')
-            
-            inputs = {
-                "excell": file_base64,
-                "sys.query": analysis_request,
-            }
-        
-        logger.info(f"[运营数据分析] 调用Dify {workflow_type} - url={url_work}, inputs_keys={list(inputs.keys())}")
-        
-        # 4. 调用Dify工作流（使用用户配置的URL）
-        result = await DifyService.run_workflow(
-            api_url=url_work,  # 直接使用用户配置的工作流URL
-            api_key=api_key,
-            workflow_id="1",  # 固定为1，实际使用url_work
-            user_id=current_user.id,
-            function_key=function_key,
-            inputs=inputs,
-            conversation_id=session_id,
-            response_mode="blocking",
-            workflow_type=workflow_type
-        )
-        
-        if not result.get("success"):
-            error_msg = result.get("error", "Dify工作流执行失败")
-            logger.error(f"[运营数据分析] Dify工作流执行失败 - {error_msg}")
+
+        if not text_result.get("success"):
+            error_msg = text_result.get("error", "文字报告生成失败")
+            logger.error(f"[运营数据分析] 阿里百炼文字报告生成失败 - {error_msg}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"工作流执行失败: {error_msg}"
+                detail=f"文字报告生成失败: {error_msg}"
             )
-        
-        # 5. 解析Dify返回的结果
-        dify_data = result.get("data", {})
-        
-        if workflow_type == "chatflow":
-            report_text = dify_data.get("answer", "")
-            if not report_text:
-                report_text = dify_data.get("text", "")
+
+        report_text = text_result.get("text_content", "")
+        logger.info(f"[运营数据分析] 文字报告生成成功 - 长度: {len(report_text)}")
+
+        # 3. 调用阿里百炼API生成HTML图表
+        html_charts = ""
+        if chart_customization_prompt and chart_customization_prompt.strip():
+            logger.info(f"[运营数据分析] 调用阿里百炼API生成HTML图表...")
+            html_result = await bailian_service.analyze_excel_and_generate_html(
+                file_path=str(file_path),
+                analysis_request=analysis_request,
+                chart_customization=chart_customization_prompt
+            )
+
+            if html_result.get("success"):
+                html_charts = html_result.get("html_content", "")
+                logger.info(f"[运营数据分析] HTML图表生成成功 - 长度: {len(html_charts)}")
+            else:
+                logger.warning(f"[运营数据分析] HTML图表生成失败: {html_result.get('error')}")
         else:
-            workflow_output = dify_data.get("data", {}).get("outputs", {})
-            report_text = workflow_output.get("text", "")
-            if not report_text:
-                report_text = dify_data.get("text", "")
-        
-        # 6. 解析echarts代码块
+            # 没有图表定制需求时，也尝试生成默认图表
+            logger.info(f"[运营数据分析] 调用阿里百炼API生成默认HTML图表...")
+            html_result = await bailian_service.analyze_excel_and_generate_html(
+                file_path=str(file_path),
+                analysis_request=analysis_request,
+                chart_customization=None
+            )
+
+            if html_result.get("success"):
+                html_charts = html_result.get("html_content", "")
+                logger.info(f"[运营数据分析] 默认HTML图表生成成功 - 长度: {len(html_charts)}")
+            else:
+                logger.warning(f"[运营数据分析] 默认HTML图表生成失败: {html_result.get('error')}")
+
+        # 5. 解析echarts代码块（如果有）
         cleaned_text, charts = parse_echarts_from_text(report_text)
-        
-        # 7. 构建报告内容
+
+        # 6. 构建报告内容
         report_content = {
             "text": cleaned_text,
             "charts": charts,
+            "html_charts": html_charts,  # 阿里百炼生成的HTML图表
             "tables": [],
             "metrics": {}
         }
-        
+
         # 如果清理后的文本是JSON格式，尝试解析
         if cleaned_text and (cleaned_text.startswith("{") or cleaned_text.startswith("[")):
             try:
@@ -605,8 +800,8 @@ async def generate_report(
                             report_content[key] = parsed[key]
             except:
                 pass
-        
-        logger.info(f"[运营数据分析] 报告生成成功 - text_length={len(cleaned_text)}, charts_count={len(charts)}")
+
+        logger.info(f"[运营数据分析] 报告生成成功 - text_length={len(cleaned_text)}, charts_count={len(charts)}, html_charts_length={len(html_charts)}")
         
         # 8. 保存对话消息到会话记录
         try:
@@ -631,6 +826,9 @@ async def generate_report(
                 
                 if charts:
                     assistant_message["charts"] = charts
+                
+                if html_charts:
+                    assistant_message["html_charts"] = html_charts
                 
                 if report_content.get("tables"):
                     assistant_message["tables"] = report_content["tables"]
@@ -669,18 +867,92 @@ async def generate_report(
         error_traceback = traceback.format_exc()
         logger.error(f"[运营数据分析] 生成报告异常 - {error_detail}")
         logger.error(f"[运营数据分析] 异常堆栈:\n{error_traceback}")
-        
+
         error_msg = f"生成报告失败: {error_detail}"
-        if "workflow" in error_detail.lower() or "dify" in error_detail.lower():
-            error_msg = f"工作流执行错误: {error_detail}"
+        if "dashscope" in error_detail.lower() or "bailian" in error_detail.lower() or "api" in error_detail.lower():
+            error_msg = f"阿里百炼API调用错误: {error_detail}"
         elif "file" in error_detail.lower():
             error_msg = f"文件处理错误: {error_detail}"
-        elif "upload" in error_detail.lower():
-            error_msg = f"文件上传错误: {error_detail}"
-        
+        elif "excel" in error_detail.lower():
+            error_msg = f"Excel读取错误: {error_detail}"
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_msg
+        )
+
+
+@router.post("/charts/modify", response_model=SuccessResponse)
+async def modify_chart(
+    session_id: int = Form(...),
+    current_html: str = Form(...),
+    color: Optional[str] = Form(None),
+    chart_type: Optional[str] = Form(None),
+    ai_instruction: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    修改图表
+    
+    Args:
+        session_id: 会话ID
+        current_html: 当前图表的HTML代码
+        color: 颜色修改（如 #409eff）
+        chart_type: 图表类型（bar/line/pie）
+        ai_instruction: AI自由修改指令
+    """
+    from app.services.chart_modification_service import ChartModificationService
+    
+    logger.info(f"[图表修改] 收到修改请求 - session_id={session_id}, user_id={current_user.id}")
+    logger.info(f"[图表修改] 修改参数 - color={color}, type={chart_type}, ai={ai_instruction[:50] if ai_instruction else None}")
+    
+    try:
+        # 验证会话存在且属于当前用户
+        function_key = "operation_data_analysis"
+        conversation = db.query(AnalysisSession).filter(
+            AnalysisSession.id == session_id,
+            AnalysisSession.function_key == function_key,
+            AnalysisSession.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在或无权限访问"
+            )
+        
+        # 调用图表修改服务
+        chart_service = ChartModificationService()
+        result = await chart_service.modify_chart(
+            current_html=current_html,
+            color=color,
+            chart_type=chart_type,
+            ai_instruction=ai_instruction
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "图表修改失败")
+            )
+        
+        logger.info(f"[图表修改] 修改成功 - session_id={session_id}")
+        
+        return SuccessResponse(
+            data={
+                "html": result.get("html")
+            },
+            message="图表修改成功"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[图表修改] 修改失败 - error={str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"图表修改失败: {str(e)}"
         )
 
 
@@ -2233,3 +2505,308 @@ async def delete_custom_batch_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"删除会话失败: {str(e)}"
         )
+
+
+# ==================== AI对话API ====================
+
+@router.post("/dialog/stream")
+async def dialog_stream(
+    session_id: int = Form(...),
+    user_message: str = Form(...),
+    conversation_id: Optional[str] = Form(None),
+    current_charts: str = Form("[]"),
+    current_report_text: str = Form(""),
+    current_html_charts: str = Form(""),
+    selected_text: Optional[str] = Form(None),
+    selected_text_context: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    流式AI对话接口（支持多轮对话上下文）
+    支持报告文字修改、内容添加、对话交互等功能
+    返回 SSE (Server-Sent Events) 格式的流式响应
+    """
+    from app.services.bailian_dialog_service_stream import BailianDialogServiceStream
+    from app.services.dialog_manager import DialogManager
+
+    logger.info(f"[AI对话] 收到流式对话请求 - session_id={session_id}, user_id={current_user.id}")
+    logger.info(f"[AI对话] 用户消息: {user_message[:100]}...")
+
+    # 解析参数
+    try:
+        charts_list = json.loads(current_charts) if current_charts else []
+    except json.JSONDecodeError:
+        charts_list = []
+
+    context_dict = None
+    if selected_text_context:
+        try:
+            context_dict = json.loads(selected_text_context)
+        except json.JSONDecodeError:
+            pass
+
+    if selected_text:
+        logger.info(f"[AI对话] 选中文字长度: {len(selected_text)}")
+
+    # 获取对话历史（从数据库）
+    dialog_manager = DialogManager()
+    dialog_history = dialog_manager.get_messages_for_ai(db, session_id, limit=20)
+    logger.info(f"[AI对话] 获取到历史对话 {len(dialog_history)} 条")
+
+    # 保存用户消息到数据库
+    dialog_manager.save_message_to_db(
+        db=db,
+        session_id=session_id,
+        role="user",
+        content=user_message,
+        extra_data={"selected_text": selected_text} if selected_text else None
+    )
+
+    # 创建流式对话服务
+    dialog_service = BailianDialogServiceStream()
+
+    async def generate_sse():
+        """生成 SSE 格式的流式响应"""
+        ai_response = ""
+        action_type = "chat"
+
+        try:
+            async for chunk in dialog_service.process_dialog_message_stream(
+                session_id=str(session_id),
+                user_message=user_message,
+                current_charts=charts_list,
+                conversation_id=conversation_id,
+                current_report_text=current_report_text,
+                current_html_charts=current_html_charts,
+                selected_text=selected_text,
+                selected_text_context=context_dict,
+                dialog_history=dialog_history
+            ):
+                # 收集AI回复内容
+                if chunk.get("type") == "content":
+                    ai_response += chunk.get("content", "")
+                elif chunk.get("type") == "done":
+                    data = chunk.get("data", {})
+                    ai_response = data.get("response", ai_response)
+                    action_type = data.get("action_type", "chat")
+
+                # 将每个 chunk 转换为 SSE 格式
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+            # 保存AI回复到数据库
+            if ai_response:
+                dialog_manager.save_message_to_db(
+                    db=db,
+                    session_id=session_id,
+                    role="assistant",
+                    content=ai_response,
+                    extra_data={"action_type": action_type}
+                )
+                logger.debug(f"[AI对话] 已保存AI回复到数据库 - session_id={session_id}")
+
+        except Exception as e:
+            logger.error(f"[AI对话] 流式处理异常: {str(e)}")
+            error_chunk = {
+                "type": "error",
+                "content": f"处理失败: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/dialog")
+async def dialog_non_stream(
+    session_id: int = Form(...),
+    user_message: str = Form(...),
+    conversation_id: Optional[str] = Form(None),
+    current_charts: str = Form("[]"),
+    current_report_text: str = Form(""),
+    current_html_charts: str = Form(""),
+    selected_text: Optional[str] = Form(None),
+    selected_text_context: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    非流式AI对话接口（兼容旧版本）
+    """
+    from app.services.bailian_dialog_service import BailianDialogService
+    
+    logger.info(f"[AI对话] 收到非流式对话请求 - session_id={session_id}, user_id={current_user.id}")
+    
+    # 解析参数
+    try:
+        charts_list = json.loads(current_charts) if current_charts else []
+    except json.JSONDecodeError:
+        charts_list = []
+    
+    context_dict = None
+    if selected_text_context:
+        try:
+            context_dict = json.loads(selected_text_context)
+        except json.JSONDecodeError:
+            pass
+    
+    try:
+        dialog_service = BailianDialogService()
+        result = await dialog_service.process_dialog_message(
+            session_id=str(session_id),
+            user_message=user_message,
+            current_charts=charts_list,
+            conversation_id=conversation_id,
+            current_report_text=current_report_text,
+            current_html_charts=current_html_charts,
+            selected_text=selected_text,
+            selected_text_context=context_dict
+        )
+        
+        return SuccessResponse(
+            data=result,
+            message="对话处理成功"
+        )
+    except Exception as e:
+        logger.error(f"[AI对话] 处理失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"对话处理失败: {str(e)}"
+        )
+
+
+@router.get("/dialog/history")
+async def get_dialog_history(
+    session_id: int = Query(..., description="会话ID"),
+    limit: int = Query(20, ge=1, le=100, description="返回消息数量限制"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取对话历史记录（从DialogHistory表读取，支持版本标记）
+    """
+    from app.models.dialog_history import DialogHistory
+    from app.models.session_version import AnalysisSessionVersion
+    
+    logger.info(f"[AI对话] 获取对话历史 - session_id={session_id}, user_id={current_user.id}")
+    
+    try:
+        # 验证会话存在且属于当前用户
+        function_key = "operation_data_analysis"
+        conversation = db.query(AnalysisSession).filter(
+            AnalysisSession.id == session_id,
+            AnalysisSession.function_key == function_key,
+            AnalysisSession.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在或无权限访问"
+            )
+        
+        # 从DialogHistory表获取对话历史
+        dialog_records = db.query(DialogHistory).filter(
+            DialogHistory.session_id == session_id
+        ).order_by(DialogHistory.created_at.asc()).limit(limit).all()
+        
+        # 获取所有版本信息（用于标记）
+        versions = db.query(AnalysisSessionVersion).filter(
+            AnalysisSessionVersion.session_id == session_id
+        ).order_by(AnalysisSessionVersion.created_at.asc()).all()
+        
+        version_map = {v.id: v for v in versions}
+        
+        # 构建消息列表
+        messages = []
+        for record in dialog_records:
+            msg = record.to_dict()
+            
+            # 如果有版本标记，添加版本信息
+            if record.version_id and record.version_id in version_map:
+                version = version_map[record.version_id]
+                msg['version_marker'] = {
+                    'version_id': version.id,
+                    'version_no': version.version_no,
+                    'summary': version.summary,
+                    'created_at': version.created_at.isoformat() if version.created_at else None
+                }
+            
+            messages.append(msg)
+        
+        logger.info(f"[AI对话] 获取对话历史成功 - session_id={session_id}, count={len(messages)}")
+        
+        return SuccessResponse(
+            data={"messages": messages},
+            message="获取对话历史成功"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[AI对话] 获取对话历史失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取对话历史失败: {str(e)}"
+        )
+
+
+@router.delete("/dialog/history")
+async def clear_dialog_history(
+    session_id: int = Query(..., description="会话ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    清除对话历史记录（从DialogHistory表删除）
+    """
+    from app.models.dialog_history import DialogHistory
+    
+    logger.info(f"[AI对话] 清除对话历史 - session_id={session_id}, user_id={current_user.id}")
+    
+    try:
+        function_key = "operation_data_analysis"
+        conversation = db.query(AnalysisSession).filter(
+            AnalysisSession.id == session_id,
+            AnalysisSession.function_key == function_key,
+            AnalysisSession.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话不存在或无权限访问"
+            )
+        
+        # 删除DialogHistory表中的记录
+        db.query(DialogHistory).filter(
+            DialogHistory.session_id == session_id
+        ).delete()
+        
+        # 同时清空会话的messages字段（兼容旧数据）
+        conversation.messages = []
+        db.commit()
+        
+        logger.info(f"[AI对话] 对话历史已清除 - session_id={session_id}")
+        
+        return SuccessResponse(
+            data={"session_id": session_id},
+            message="对话历史已清除"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[AI对话] 清除对话历史失败: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"清除对话历史失败: {str(e)}"
+        )
+
+

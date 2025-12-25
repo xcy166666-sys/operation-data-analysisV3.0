@@ -35,6 +35,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"❌ Redis连接失败: {e}")
     
+    # 自动初始化工作流配置（仅在首次启动时）
+    try:
+        from app.core.database import SessionLocal
+        from app.models.workflow import WorkflowBinding
+        from app.models.function_module import FunctionModule
+        
+        db = SessionLocal()
+        try:
+            # 检查是否已有工作流绑定
+            existing_bindings = db.query(WorkflowBinding).filter(
+                WorkflowBinding.user_id.is_(None)  # 全局配置
+            ).count()
+            
+            # 检查功能模块是否存在
+            existing_functions = db.query(FunctionModule).count()
+            
+            if existing_bindings == 0 or existing_functions == 0:
+                logger.info("检测到数据库未完全初始化，开始自动初始化...")
+                from scripts.init_all import init_all
+                if init_all(user_id=1):
+                    logger.info("✅ 数据库自动初始化成功（功能模块 + 工作流配置）")
+                else:
+                    logger.warning("⚠️  数据库自动初始化失败，请手动运行 scripts/init_all.py")
+            else:
+                logger.debug(f"数据库已初始化（功能模块: {existing_functions}, 工作流绑定: {existing_bindings}）")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"⚠️  数据库自动初始化检查失败: {e}，请手动运行 scripts/init_all.py")
+    
     yield
     
     # 关闭时执行
@@ -98,7 +128,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=21800,  # 后端端口：21000~21999区间后半段（本地开发时使用）
         reload=settings.DEBUG
     )
 

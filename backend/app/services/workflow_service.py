@@ -111,9 +111,10 @@ class WorkflowService:
         db: Session,
         function_key: str,
         workflow_id: int,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        sheet_index: Optional[int] = None
     ) -> WorkflowBinding:
-        """绑定功能到工作流（支持用户级配置，user_id为None表示全局配置）"""
+        """绑定功能到工作流（支持用户级配置，user_id为None表示全局配置，sheet_index用于定制化批量分析）"""
         # 检查是否已存在绑定
         query = db.query(WorkflowBinding).filter(
             WorkflowBinding.function_key == function_key
@@ -122,6 +123,12 @@ class WorkflowService:
             query = query.filter(WorkflowBinding.user_id == user_id)
         else:
             query = query.filter(WorkflowBinding.user_id.is_(None))
+        
+        # 对于定制化批量分析，需要匹配sheet_index
+        if sheet_index is not None:
+            query = query.filter(WorkflowBinding.sheet_index == sheet_index)
+        else:
+            query = query.filter(WorkflowBinding.sheet_index.is_(None))
         
         existing = query.first()
         
@@ -136,7 +143,8 @@ class WorkflowService:
             binding = WorkflowBinding(
                 function_key=function_key,
                 workflow_id=workflow_id,
-                user_id=user_id
+                user_id=user_id,
+                sheet_index=sheet_index
             )
             db.add(binding)
             db.commit()

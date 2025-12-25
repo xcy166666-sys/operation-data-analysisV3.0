@@ -81,6 +81,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ChatDotRound, Plus, Search, DocumentCopy, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { BatchSession } from '@/api/operation'
+import type { ApiResponse } from '@/types'
 import { getBatchSessions, deleteBatchSession, createBatchSession } from '@/api/operation'
 import { useOperationStore } from '@/stores/operation'
 
@@ -163,8 +164,9 @@ const handleCreateNew = async () => {
   try {
     loading.value = true
     const response = await createBatchSession()
-    if (response.success && response.data) {
-      const newSession = response.data
+    const createResponse = response as unknown as ApiResponse<any>
+    if (createResponse.success && createResponse.data) {
+      const newSession = createResponse.data
       // 添加到列表顶部，立即显示
       sessions.value.unshift(newSession)
       // 设置当前会话
@@ -182,7 +184,8 @@ const handleCreateNew = async () => {
         }
       }, 300)
     } else {
-      ElMessage.error(response.message || '创建批量分析会话失败')
+      const createErrorResponse = response as unknown as ApiResponse<any>
+      ElMessage.error(createErrorResponse.message || '创建批量分析会话失败')
     }
   } catch (error: any) {
     console.error('创建批量分析会话失败:', error)
@@ -205,7 +208,8 @@ const handleDeleteSession = async (sessionId: number) => {
     )
     
     const response = await deleteBatchSession(sessionId)
-    if (response.success) {
+    const deleteResponse = response as unknown as ApiResponse<any>
+    if (deleteResponse.success) {
       ElMessage.success('会话已删除')
       
       if (currentSessionId.value === sessionId) {
@@ -226,7 +230,8 @@ const loadSessions = async () => {
   try {
     loading.value = true
     const response = await getBatchSessions()
-    if (response.success && response.data) {
+    const batchResponse = response as unknown as ApiResponse<any>
+    if (batchResponse.success && batchResponse.data) {
       sessions.value = response.data.sessions || []
     }
   } catch (error: any) {

@@ -10,16 +10,44 @@
       <!-- 报告文本（Markdown渲染） -->
       <div 
         class="report-text" 
-        v-html="formatReportText(report.report_content.text || '')"
+        v-html="formattedReportText"
       ></div>
       
-      <!-- 图表 -->
+      <!-- HTML图表操作按钮（触发抽屉面板） -->
+      <div class="chart-action-section" v-if="report.report_content.html_charts && report.report_content.html_charts.length > 0">
+        <el-button 
+          type="primary" 
+          :icon="View"
+          size="large"
+          @click="openChartDrawer"
+        >
+          查看图表详情
+        </el-button>
+        <el-button 
+          type="primary" 
+          :icon="Download"
+          size="large"
+          @click="downloadChart"
+        >
+          下载图表
+        </el-button>
+        <el-button 
+          type="primary" 
+          :icon="Download"
+          size="large"
+          @click="handleDownload"
+        >
+          下载报告 (PDF)
+        </el-button>
+      </div>
+      
+      <!-- JSON图表显示（向后兼容，如果没有html_charts则使用旧方式） -->
       <div 
         class="report-charts" 
-        v-if="report.report_content.charts && report.report_content.charts.length > 0"
+        v-else-if="report.report_content.charts && report.report_content.charts.length > 0"
       >
         <div 
-          v-for="(chart, index) in report.report_content.charts" 
+          v-for="(_chart, index) in report.report_content.charts" 
           :key="index"
           class="chart-container"
         >
@@ -27,11 +55,12 @@
         </div>
       </div>
       
-      <!-- 下载按钮 -->
-      <div class="report-actions">
+      <!-- 下载按钮（当没有HTML图表时显示） -->
+      <div class="report-actions" v-if="!report.report_content.html_charts || report.report_content.html_charts.length === 0">
         <el-button 
           type="primary" 
           :icon="Download"
+          size="large"
           @click="handleDownload"
         >
           下载报告 (PDF)
@@ -39,10 +68,19 @@
       </div>
     </div>
     
+    <!-- 图表抽屉组件 -->
+    <ChartDrawer
+      v-if="report"
+      v-model="showChartDrawer"
+      :html-content="report.report_content?.html_charts"
+      :title="report.sheet_name || '图表详情'"
+      @close="handleChartDrawerClose"
+    />
+    
     <!-- 错误状态 -->
-    <div v-else-if="report && report.report_status === 'failed'" class="error-container">
+    <div v-else-if="report && (report as any).report_status === 'failed'" class="error-container">
       <el-alert
-        :title="`报告生成失败: ${report.error_message || '未知错误'}`"
+        :title="`报告生成失败: ${(report as any).error_message || '未知错误'}`"
         type="error"
         :closable="false"
         show-icon
@@ -60,10 +98,12 @@
 import { ref, watch, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import * as echarts from 'echarts'
-import { Download } from '@element-plus/icons-vue'
+import { Download, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { SheetReportDetail } from '@/api/operation'
+import type { AxiosResponse } from 'axios'
 import { downloadBatchReportPDF, downloadCustomBatchReportPDF } from '@/api/operation'
+import ChartDrawer from './ChartDrawer.vue'
 
 interface Props {
   report: SheetReportDetail | null
@@ -75,16 +115,72 @@ const props = defineProps<Props>()
 
 const chartInstances = ref<Map<number, echarts.ECharts>>(new Map())
 
-const formatReportText = (text: string) => {
+// 图表抽屉状态
+const showChartDrawer = ref(false)
+
+// 格式化后的文本（响应式）
+const formattedReportText = ref<string>('')
+
+// 打开图表抽屉
+const openChartDrawer = () => {
+  if (props.report?.report_content?.html_charts) {
+    showChartDrawer.value = true
+  } else {
+    ElMessage.warning('暂无图表内容')
+  }
+}
+
+// 关闭图表抽屉
+const handleChartDrawerClose = () => {
+  showChartDrawer.value = false
+}
+
+// 下载图表
+const downloadChart = async () => {
+  if (!props.report?.report_content?.html_charts) {
+    ElMessage.warning('暂无图表内容')
+    return
+  }
+
+  try {
+    // 导出HTML文件
+    const htmlContent = props.report.report_content.html_charts
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    
+    // 生成文件名（包含时间戳）
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+    link.download = `图表_${timestamp}.html`
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('图表已保存为HTML文件')
+  } catch (error) {
+    console.error('下载图表失败:', error)
+    ElMessage.error('下载图表失败，请稍候再试')
+  }
+}
+
+const formatReportText = async (text: string): Promise<string> => {
   if (!text) return ''
   
   try {
     marked.setOptions({
       breaks: true,
       gfm: true,
+      async: false  // 强制同步模式
     })
     
-    const html = marked.parse(text)
+    const result = marked.parse(text)
+    // 处理可能的 Promise 返回值
+    const html = (typeof result === 'object' && result !== null && 'then' in result) 
+      ? await result 
+      : String(result)
     const htmlWithoutTables = html.replace(/<table[\s\S]*?<\/table>/gi, '')
     return htmlWithoutTables
   } catch (error) {
@@ -94,6 +190,12 @@ const formatReportText = (text: string) => {
 }
 
 const renderCharts = async () => {
+  // 如果已经有html_charts，不渲染ECharts
+  if (props.report?.report_content?.html_charts) {
+    console.log('[ReportDisplay] 使用HTML模式，跳过ECharts渲染')
+    return
+  }
+  
   if (!props.report || !props.report.report_content?.charts || props.report.report_content.charts.length === 0) {
     return
   }
@@ -142,7 +244,7 @@ const renderCharts = async () => {
 }
 
 const cleanupCharts = () => {
-  chartInstances.value.forEach((instance, index) => {
+  chartInstances.value.forEach((instance) => {
     const resizeHandler = (instance as any)._resizeHandler
     if (resizeHandler) {
       window.removeEventListener('resize', resizeHandler)
@@ -154,6 +256,13 @@ const cleanupCharts = () => {
 
 watch(() => props.report, async (newReport) => {
   if (newReport && newReport.report_status === 'completed') {
+    // 格式化文本
+    if (newReport.report_content?.text) {
+      formattedReportText.value = await formatReportText(newReport.report_content.text)
+    } else {
+      formattedReportText.value = ''
+    }
+    // 渲染图表
     cleanupCharts()
     await renderCharts()
   }
@@ -180,8 +289,9 @@ const exportChartsAsImages = async (): Promise<Array<{index: number, title: stri
         backgroundColor: '#fff'
       })
       
-      const chartTitle = props.report?.report_content?.charts?.[index]?.title || 
-                        props.report?.report_content?.charts?.[index]?.config?.title?.text ||
+      const chartData = props.report?.report_content?.charts?.[index] as any
+      const chartTitle = chartData?.title || 
+                        chartData?.config?.title?.text ||
                         `图表${index + 1}`
       
       chartImages.push({
@@ -211,19 +321,137 @@ const handleDownload = async () => {
   try {
     ElMessage.info('正在准备下载，请稍候...')
     
-    if (chartInstances.value.size === 0) {
+    let chartImages: Array<{index: number, title: string, image: string}> = []
+    
+    // 1. 导出图表为图片
+    if (props.report.report_content?.html_charts) {
+      // 如果有 HTML 图表，使用 html2canvas 截图
+      try {
+        ElMessage.info('正在截图HTML图表，请稍候...')
+        const html2canvas = (await import('html2canvas')).default
+        
+        // 创建一个iframe来渲染HTML图表（确保脚本正确执行）
+        const tempIframe = document.createElement('iframe')
+        tempIframe.style.position = 'absolute'
+        tempIframe.style.left = '-9999px'
+        tempIframe.style.top = '0'
+        tempIframe.style.width = '1200px'
+        tempIframe.style.height = '800px'
+        tempIframe.style.border = 'none'
+        tempIframe.sandbox.add('allow-scripts', 'allow-same-origin')
+        document.body.appendChild(tempIframe)
+        
+        // 等待iframe加载
+        await new Promise<void>((resolve) => {
+          tempIframe.onload = () => resolve()
+          tempIframe.srcdoc = props.report!.report_content!.html_charts!
+        })
+        
+        // 等待iframe内容完全加载
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        // 获取iframe内容
+        let targetElement: HTMLElement | null = null
+        try {
+          const iframeDoc = tempIframe.contentDocument || tempIframe.contentWindow?.document
+          if (iframeDoc && iframeDoc.body) {
+            targetElement = iframeDoc.body
+            
+            // 等待图表渲染完成（检查canvas元素或图表容器）
+            let attempts = 0
+            const maxAttempts = 20 // 最多等待10秒
+            
+            while (attempts < maxAttempts) {
+              // 检查是否有canvas元素（ECharts等图表库会创建canvas）
+              const canvases = targetElement.querySelectorAll('canvas')
+              
+              // 如果找到canvas或者等待时间足够长，认为图表已渲染
+              if (canvases.length > 0 || attempts >= 10) {
+                // 再等待一下确保图表完全绘制
+                await new Promise(resolve => setTimeout(resolve, 1000))
+                break
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, 500))
+              attempts++
+            }
+            
+            // 等待所有图片加载完成
+            const images = targetElement.querySelectorAll('img')
+            if (images.length > 0) {
+              await Promise.all(
+                Array.from(images).map((img: HTMLImageElement) => {
+                  if (img.complete) {
+                    return Promise.resolve(undefined)
+                  }
+                  return new Promise<void>((resolve) => {
+                    img.onload = () => resolve()
+                    img.onerror = () => resolve() // 即使失败也继续
+                    setTimeout(() => resolve(), 3000) // 超时也继续
+                  })
+                })
+              )
+            }
+            
+            // 最后等待一下，确保所有内容都渲染完成
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+        } catch (e) {
+          console.warn('无法访问iframe内容，尝试截图iframe本身:', e)
+          targetElement = tempIframe
+        }
+        
+        if (!targetElement) {
+          throw new Error('无法获取图表内容')
+        }
+        
+        // 截图
+        const canvas = await html2canvas(targetElement, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          allowTaint: true,
+          width: targetElement.scrollWidth || 1200,
+          height: targetElement.scrollHeight || 800,
+          windowWidth: targetElement.scrollWidth || 1200,
+          windowHeight: targetElement.scrollHeight || 800
+        })
+        
+        // 转换为 base64
+        const imageDataUrl = canvas.toDataURL('image/png', 1.0)
+        
+        if (!imageDataUrl || imageDataUrl === 'data:,') {
+          throw new Error('截图生成失败：图片数据为空')
+        }
+        
+        chartImages.push({
+          index: 0,
+          title: '数据可视化图表',
+          image: imageDataUrl
+        })
+        
+        // 清理临时元素
+        document.body.removeChild(tempIframe)
+        ElMessage.success('图表截图成功')
+      } catch (error) {
+        console.error('HTML图表截图失败:', error)
+        ElMessage.warning(`图表截图失败: ${error instanceof Error ? error.message : '未知错误'}，将生成不含图表的PDF`)
+      }
+    } else if (chartInstances.value.size > 0) {
+      // 如果有 ECharts 实例，使用原有方法
       await new Promise(resolve => setTimeout(resolve, 1000))
+      chartImages = await exportChartsAsImages()
     }
     
-    const chartImages = await exportChartsAsImages()
-    
-    // 根据isCustomBatch选择使用哪个API
+    // 2. 调用后端API，传递图表图片
     const response = props.isCustomBatch
       ? await downloadCustomBatchReportPDF(props.report.id, chartImages)
       : await downloadBatchReportPDF(props.report.id, chartImages)
     
     if (response.data instanceof Blob) {
-      const contentType = response.headers?.['content-type'] || ''
+      const axiosResponse = response as any as AxiosResponse
+      const contentType = axiosResponse.headers?.['content-type'] || ''
       if (contentType.includes('application/json')) {
         const text = await response.data.text()
         try {
@@ -368,6 +596,16 @@ const handleDownload = async () => {
       :deep(em) {
         font-style: italic;
       }
+    }
+    
+    /* 图表操作按钮区域 */
+    .chart-action-section {
+      margin-top: 20px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
     }
     
     .report-charts {

@@ -78,7 +78,7 @@ async def get_current_user_from_token(
 
 
 async def get_current_user_from_session(
-    session_id: Optional[str] = Cookie(None),
+    auth_session_id: Optional[str] = Cookie(None, alias="session_id"),
     redis: RedisClient = Depends(get_redis),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
@@ -86,14 +86,14 @@ async def get_current_user_from_session(
     从Session Cookie获取当前用户
     用于Web浏览器访问
     """
-    if not session_id:
+    if not auth_session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="未登录",
         )
-    
+
     # 从Redis获取Session数据
-    session_data = await redis.get_json(f"session:{session_id}")
+    session_data = await redis.get_json(f"session:{auth_session_id}")
     if not session_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -126,7 +126,7 @@ async def get_current_user_from_session(
 
 async def get_current_user(
     authorization: Optional[str] = Header(None),
-    session_id: Optional[str] = Cookie(None),
+    auth_session_id: Optional[str] = Cookie(None, alias="session_id"),
     redis: RedisClient = Depends(get_redis),
     db: Session = Depends(get_db)
 ) -> User:
@@ -140,11 +140,11 @@ async def get_current_user(
             return await get_current_user_from_token(authorization, db)
         except HTTPException:
             pass
-    
+
     # 尝试Session认证
-    if session_id:
+    if auth_session_id:
         try:
-            return await get_current_user_from_session(session_id, redis, db)
+            return await get_current_user_from_session(auth_session_id, redis, db)
         except HTTPException:
             pass
     

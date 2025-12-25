@@ -1,0 +1,1941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试用例生成工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: #1d1d1f;
+            padding: 32px 40px;
+            text-align: center;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            color: #86868b;
+            font-size: 15px;
+            font-weight: 400;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .upload-section {
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #d2d2d7;
+            border-radius: 16px;
+            padding: 48px 40px;
+            text-align: center;
+            background: rgba(248, 248, 248, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        .upload-area * {
+            pointer-events: none;
+        }
+        
+        label.upload-area {
+            display: block;
+        }
+
+        .upload-area:hover {
+            border-color: #007aff;
+            background: rgba(240, 247, 255, 0.8);
+        }
+
+        .upload-area.dragover {
+            border-color: #007aff;
+            background: rgba(230, 240, 255, 0.9);
+            transform: scale(1.01);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 17px;
+            color: #1d1d1f;
+            margin-bottom: 8px;
+            font-weight: 400;
+        }
+
+        .upload-hint {
+            font-size: 13px;
+            color: #86868b;
+            font-weight: 400;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 20px;
+            padding: 16px 20px;
+            background: rgba(248, 248, 248, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .file-name {
+            font-weight: 500;
+            color: #1d1d1f;
+            margin-bottom: 4px;
+            font-size: 15px;
+        }
+
+        .file-size {
+            font-size: 13px;
+            color: #86868b;
+            font-weight: 400;
+        }
+
+        .keyword-section {
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        .keyword-label {
+            display: block;
+            font-size: 15px;
+            font-weight: 500;
+            color: #1d1d1f;
+            margin-bottom: 8px;
+        }
+
+        .keyword-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            font-size: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: rgba(248, 248, 248, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: #1d1d1f;
+            resize: vertical;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-sizing: border-box;
+            min-height: 80px;
+            line-height: 1.5;
+        }
+
+        /* 对话输入框包装器（横向布局：输入框 + 发送按钮） */
+        .chat-input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        /* 输入框在包装器中占据剩余空间 */
+        .chat-input-wrapper .keyword-input {
+            flex: 1;
+            margin-bottom: 0; /* 移除原有的 margin-bottom */
+            min-width: 0; /* 允许输入框缩小 */
+        }
+
+        /* 发送按钮样式 */
+        #sendChatBtn {
+            padding: 12px 16px;
+            white-space: nowrap;
+            align-self: flex-end;
+            width: 70px; /* 固定较小宽度 */
+            flex-shrink: 0; /* 防止按钮被压缩 */
+            flex-grow: 0; /* 不允许按钮扩展 */
+        }
+
+        /* 发送按钮禁用状态 */
+        #sendChatBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .keyword-input:focus {
+            outline: none;
+            border-color: #007aff;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }
+
+        .keyword-input::placeholder {
+            color: #86868b;
+        }
+
+        .keyword-input:disabled {
+            background-color: #f5f5f7;
+            color: #86868b;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .keyword-hint {
+            font-size: 13px;
+            color: #86868b;
+            margin-top: 6px;
+            font-weight: 400;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 12px;
+            font-size: 17px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        }
+
+        .btn-primary {
+            background: #007aff;
+            color: white;
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #0051d5;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn-secondary {
+            background: rgba(142, 142, 147, 0.12);
+            color: #1d1d1f;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(142, 142, 147, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid rgba(142, 142, 147, 0.2);
+            border-top: 3px solid #007aff;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .result-section.show {
+            display: block;
+        }
+
+        .result-header {
+            background: rgba(248, 248, 248, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 16px 20px;
+            border-radius: 12px 12px 0 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            font-weight: 600;
+            color: #1d1d1f;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 17px;
+        }
+
+        .result-header-title {
+            flex: 1;
+        }
+
+        .download-btn {
+            background: #007aff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 6px rgba(0, 122, 255, 0.2);
+        }
+
+        .download-btn:hover {
+            background: #0051d5;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(0, 122, 255, 0.3);
+        }
+
+        .download-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(0, 122, 255, 0.2);
+        }
+
+        .result-content {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-top: none;
+            border-radius: 0 0 12px 12px;
+            max-height: 600px;
+            overflow-x: auto;
+            overflow-y: auto;
+        }
+
+        .result-content pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            /* 添加平滑滚动，优化流式输出体验 */
+            scroll-behavior: smooth;
+        }
+
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            background: white;
+            min-width: 800px;
+        }
+
+        .result-table thead {
+            background: rgba(0, 122, 255, 0.1);
+            color: #1d1d1f;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .result-table th {
+            padding: 12px 10px;
+            text-align: left;
+            font-weight: 600;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .result-table td {
+            padding: 12px 10px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            vertical-align: top;
+            word-wrap: break-word;
+        }
+
+        .result-table tbody tr {
+            transition: background-color 0.2s;
+        }
+
+        .result-table tbody tr:nth-child(even) {
+            background-color: rgba(248, 248, 248, 0.5);
+        }
+
+        .result-table tbody tr:hover {
+            background-color: rgba(0, 122, 255, 0.05);
+        }
+
+        .result-table-wrapper {
+            overflow-x: auto;
+            width: 100%;
+        }
+
+        .result-table-wrapper table {
+            margin: 0;
+        }
+
+        .error {
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid rgba(255, 59, 48, 0.3);
+            color: #ff3b30;
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+            display: none;
+            font-size: 15px;
+            font-weight: 400;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(142, 142, 147, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .progress-bar.show {
+            display: block;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #007aff;
+            width: 0%;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .clear-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 13px;
+            color: #1d1d1f;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            z-index: 10;
+        }
+
+        .clear-btn:hover {
+            background: rgba(255, 255, 255, 1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+            transform: translateY(-1px);
+        }
+
+        .clear-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .chat-section {
+            margin-top: 30px;
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+        }
+
+        .chat-input-area {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            font-size: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            resize: vertical;
+            min-height: 60px;
+            max-height: 120px;
+            line-height: 1.5;
+            background: rgba(248, 248, 248, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: #1d1d1f;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #007aff;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }
+
+        .chat-input::placeholder {
+            color: #86868b;
+        }
+
+        .btn-send {
+            background: #007aff;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn-send:hover:not(:disabled) {
+            background: #0051d5;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+        }
+
+        .btn-send:active:not(:disabled) {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn-send:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 测试用例生成工具</h1>
+            <p>上传文档，自动生成测试用例</p>
+        </div>
+
+        <div class="content">
+            <div class="upload-section">
+                <label for="fileInput" class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📄</div>
+                    <div class="upload-text">点击或拖拽文件到此处上传</div>
+                    <div class="upload-hint">支持 DOCX, DOC, PDF, TXT, XLSX, XLS 格式</div>
+                </label>
+                <input type="file" id="fileInput" accept=".docx,.doc,.pdf,.txt,.xlsx,.xls">
+                
+                <div class="file-info" id="fileInfo">
+                    <div class="file-name" id="fileName"></div>
+                    <div class="file-size" id="fileSize"></div>
+                </div>
+
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div class="keyword-section" id="keywordSection">
+                <label class="keyword-label" for="keywordInput">补充列的维度（可选）</label>
+                <textarea 
+                    class="keyword-input" 
+                    id="keywordInput" 
+                    placeholder="可选：输入列的关键字，用于生成测试用例的列"
+                    rows="3"
+                ></textarea>
+                <div class="keyword-hint">💡 提示：请使用中文逗号（，）分隔多个维度。留空则按原方式运行</div>
+                <div class="keyword-hint" style="color: #86868b; font-style: italic;">列的预设维度是："测试类别，测试项，前置条件，测试步骤，预期结果"</div>
+            </div>
+
+            <div class="keyword-section" id="keywordSection2">
+                <label class="keyword-label" for="keywordInput2">补充行的维度（可选）</label>
+                <textarea 
+                    class="keyword-input" 
+                    id="keywordInput2" 
+                    placeholder="可选：输入补充行的关键字，用于生成表格的行"
+                    rows="3"
+                ></textarea>
+                <div class="keyword-hint">💡 提示：请使用中文逗号（，）分隔多个关键字。留空则按原方式运行</div>
+                <div class="keyword-hint" style="color: #86868b; font-style: italic;">行的预设维度是："界面、功能、数值、边界值、异常点"</div>
+            </div>
+
+            <div class="keyword-section" id="chatSection">
+                <label class="keyword-label" for="chatInput">对话输入（可选）</label>
+                <div class="chat-input-wrapper">
+                    <textarea 
+                        class="keyword-input" 
+                        id="chatInput" 
+                        placeholder="可选：输入您的问题或指令，例如：生成测试用例、请详细说明某个功能点等。留空则默认使用&quot;生成测试用例&quot;"
+                        rows="3"
+                    ></textarea>
+                    <button class="btn btn-primary" id="sendChatBtn">发送</button>
+                </div>
+                <div class="keyword-hint">💡 提示：首次输入将用于生成测试用例，后续可在此输入框继续对话交流</div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-primary" id="generateBtn">
+                    生成测试用例
+                </button>
+                <button class="btn btn-secondary" id="clearBtnBottom">
+                    清空
+                </button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>正在处理中，请稍候...</div>
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="result-section" id="resultSection">
+                <div class="result-header">
+                    <div class="result-header-title">📋 生成的测试用例</div>
+                    <button class="download-btn" id="downloadBtn" onclick="downloadResult()" style="display: none;">
+                        <span>📥</span>
+                        <span>下载结果</span>
+                    </button>
+                </div>
+                <div class="result-content">
+                    <div class="result-table-wrapper" id="resultTableWrapper"></div>
+                    <pre id="resultContent" style="display: none;"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API配置
+        const API_KEY = "app-UQW0AMFuy2OoXMsLW5gtyFdj";
+        const URL_FILE = "http://118.89.16.95/v1/files/upload";
+        const URL_WORK = "http://118.89.16.95/v1/chat-messages";
+
+        // MIME类型映射
+        const MIME_TYPES = {
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc': 'application/msword',
+            'pdf': 'application/pdf',
+            'txt': 'text/plain',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'xls': 'application/vnd.ms-excel'
+        };
+
+        let selectedFile = null;
+        const DEFAULT_USER = "Lin"; // 默认用户名
+        let currentTableData = null; // 保存当前表格数据
+        let currentRawContent = null; // 保存原始内容
+        let currentConversationId = null; // 保存当前对话ID
+        let currentFileId = null; // 保存当前文件ID
+        let savedKeywords = ''; // 保存首次生成时的列维度关键字
+        let savedKeywords2 = ''; // 保存首次生成时的行维度关键字
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+
+            if (!uploadArea || !fileInput) {
+                console.error('上传区域或文件输入框未找到');
+                return;
+            }
+
+            // 使用 label 标签后，点击会自动触发关联的 input
+            // 不需要手动触发，避免重复打开文件选择对话框
+            // 只保留日志记录用于调试
+            uploadArea.addEventListener('click', function(e) {
+                console.log('点击上传区域 - label 会自动处理文件选择');
+            });
+
+            // 文件选择
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // 拖拽上传
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            });
+        });
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('文件已选择:', file.name);
+                handleFile(file);
+            } else {
+                console.warn('未选择文件，用户可能取消了选择');
+                // 清空文件输入框，确保下次选择时能触发 change 事件
+                e.target.value = '';
+            }
+        }
+
+        function handleFile(file) {
+            if (!file) {
+                console.error('文件对象为空');
+                return;
+            }
+            
+            selectedFile = file;
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+
+            if (!fileInfo || !fileName || !fileSize) {
+                console.error('文件信息元素未找到');
+                return;
+            }
+
+            fileName.textContent = `📎 ${file.name}`;
+            fileSize.textContent = `大小: ${formatFileSize(file.size)}`;
+            fileInfo.classList.add('show');
+            
+            console.log('文件已选择:', file.name, formatFileSize(file.size));
+        }
+
+        function clearAll() {
+            // 清空选中的文件
+            selectedFile = null;
+            
+            // 清空文件输入框
+            const fileInput = document.getElementById('fileInput');
+            fileInput.value = '';
+            
+            // 清空关键字输入框
+            const keywordInput = document.getElementById('keywordInput');
+            keywordInput.value = '';
+            
+            // 清空横行关键字输入框
+            const keywordInput2 = document.getElementById('keywordInput2');
+            keywordInput2.value = '';
+            
+            // ✅ 修改：清空对话输入框（输入框始终显示，不需要隐藏/显示）
+            const chatInput = document.getElementById('chatInput');
+            if (chatInput) {
+                chatInput.value = '';
+                chatInput.disabled = false;
+                chatInput.placeholder = "可选：输入您的问题或指令，例如：生成测试用例、请详细说明某个功能点等。留空则默认使用\"生成测试用例\"";
+            }
+            
+            // ✅ 修改：恢复提示文字
+            const chatHint = document.querySelector('#chatSection .keyword-hint');
+            if (chatHint) {
+                chatHint.textContent = '💡 提示：首次输入将用于生成测试用例，后续可在此输入框继续对话交流';
+            }
+            
+            // 清空对话相关数据
+            currentConversationId = null;
+            currentFileId = null;
+            savedKeywords = '';
+            savedKeywords2 = '';
+            
+            // ✅ 修改：显示两个关键字输入框
+            const keywordSection = document.getElementById('keywordSection');
+            const keywordSection2 = document.getElementById('keywordSection2');
+            if (keywordSection) {
+                keywordSection.style.display = 'block';
+            }
+            if (keywordSection2) {
+                keywordSection2.style.display = 'block';
+            }
+            
+            isFirstGeneration = true;
+            
+            // 隐藏文件信息
+            const fileInfo = document.getElementById('fileInfo');
+            fileInfo.classList.remove('show');
+            
+            // 隐藏进度条
+            const progressBar = document.getElementById('progressBar');
+            progressBar.classList.remove('show');
+            const progressFill = document.getElementById('progressFill');
+            progressFill.style.width = '0%';
+            
+            // 隐藏加载状态
+            hideLoading();
+            
+            // 隐藏错误信息
+            hideError();
+            
+            // 隐藏结果区域
+            hideResult();
+            
+            // 重置按钮状态
+            const generateBtn = document.getElementById('generateBtn');
+            generateBtn.disabled = false;
+            
+            // 重置数据
+            currentTableData = null;
+            currentRawContent = null;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function getFileType(fileName) {
+            const ext = fileName.split('.').pop().toLowerCase();
+            return ext;
+        }
+
+        function getMimeType(fileType) {
+            return MIME_TYPES[fileType] || 'application/octet-stream';
+        }
+
+        async function generateTestCase() {
+            if (!selectedFile) {
+                showError('请先选择要上传的文件');
+                return;
+            }
+
+            // 隐藏错误和结果
+            hideError();
+            hideResult();
+
+            // 显示加载状态
+            showLoading();
+            const generateBtn = document.getElementById('generateBtn');
+            generateBtn.disabled = true;
+
+            // 提前显示结果区域，准备流式显示
+            const resultSection = document.getElementById('resultSection');
+            const resultTableWrapper = document.getElementById('resultTableWrapper');
+            const resultContent = document.getElementById('resultContent');
+            const resultContentContainer = resultContent.parentElement; // 获取容器元素用于滚动
+            
+            resultSection.classList.add('show');
+            resultTableWrapper.innerHTML = ''; // 清空之前的内容
+            resultContent.textContent = '';
+            resultContent.style.display = 'block'; // 先显示文本模式
+
+            try {
+                // 获取补充关键字（可选）- 第一个输入框
+                const keywordInput = document.getElementById('keywordInput');
+                let keywords = keywordInput.value.trim();
+                
+                // 将中文逗号转换为英文竖线，用于传递给Dify工作流
+                // 用户输入：测试类别，测试项
+                // 转换为：测试类别 | 测试项
+                if (keywords) {
+                    // 替换中文逗号（全角和半角）为英文竖线
+                    keywords = keywords.replace(/[，,]/g, ' | ');
+                    // 清理多余的竖线和空格
+                    keywords = keywords.replace(/\s*\|\s*\|\s*/g, ' | ');
+                    // 去除首尾的竖线和空格
+                    keywords = keywords.replace(/^\s*\|\s*|\s*\|\s*$/g, '').trim();
+                }
+                
+                // 获取补充横行关键字（可选）- 第二个输入框
+                const keywordInput2 = document.getElementById('keywordInput2');
+                let keywords2 = keywordInput2.value.trim();
+                
+                // 将中文逗号转换为"、"分隔符，用于传递给Dify工作流
+                // 用户输入：界面，功能，数值
+                // 转换为：界面、功能、数值
+                if (keywords2) {
+                    // 替换中文逗号（全角和半角）为"、"
+                    keywords2 = keywords2.replace(/[，,]/g, '、');
+                    // 清理多余的"、"分隔符
+                    keywords2 = keywords2.replace(/、+/g, '、');
+                    // 去除首尾的"、"分隔符
+                    keywords2 = keywords2.replace(/^、+|、+$/g, '').trim();
+                }
+                
+                // 保存关键字供后续对话使用
+                savedKeywords = keywords;
+                savedKeywords2 = keywords2;
+                
+                // 获取对话输入框内容
+                const chatInput = document.getElementById('chatInput');
+                let userQuery = chatInput.value.trim();
+                // 如果用户没有输入，使用默认值
+                if (!userQuery) {
+                    userQuery = "生成测试用例";
+                }
+                
+                // 禁用对话输入框
+                chatInput.disabled = true;
+                
+                // 重置对话ID（新对话）
+                currentConversationId = null;
+                currentFileId = null;
+                
+                // 步骤1: 上传文件（完全不变）
+                updateProgress(30, '正在上传文件...');
+                const fileId = await uploadFile(selectedFile, DEFAULT_USER);
+                currentFileId = fileId; // 保存文件ID，供后续对话使用
+                
+                if (!fileId) {
+                    throw new Error('文件上传失败');
+                }
+
+                // 步骤2: 流式调用工作流（唯一改动：从 callWorkflow 改为 callWorkflowStreaming）
+                updateProgress(60, '正在生成测试用例...');
+                
+                let accumulatedContent = '';
+                
+                // ✅ 修复：首次生成时，conversation_id 应该是 null（创建新对话）
+                const conversationIdForFirstGen = null; // 首次生成，创建新对话
+                
+                console.log('📤 generateTestCase - 发送请求（首次生成，创建新对话）');
+                
+                await callWorkflowStreaming(
+                    fileId, 
+                    DEFAULT_USER,
+                    keywords, // 传递关键字参数（如果为空则不传递）
+                    keywords2, // 传递横行关键字参数（如果为空则不传递）
+                    userQuery, // 传递用户查询（如果为空则使用默认值）
+                    conversationIdForFirstGen, // 首次生成，传递 null（创建新对话）
+                    // onChunk: 每收到一个数据块时调用
+                    (chunk, fullContent) => {
+                        accumulatedContent = fullContent;
+                        // 实时更新显示内容
+                        resultContent.textContent = fullContent;
+                        // 滚动到底部，让用户看到最新内容
+                        if (resultContentContainer) {
+                            resultContentContainer.scrollTop = resultContentContainer.scrollHeight;
+                        }
+                        // 更新进度提示
+                        updateProgress(60 + Math.min(35, fullContent.length / 100), '正在生成中...');
+                    },
+                    // onComplete: 流式输出完成时调用
+                    (fullContent, event) => {
+                        accumulatedContent = fullContent;
+                        updateProgress(100, '完成');
+                        
+                        // 保存conversation_id（如果存在，作为备用）
+                        if (event && event.conversation_id) {
+                            currentConversationId = event.conversation_id;
+                            console.log('保存对话ID（onComplete备用）:', currentConversationId);
+                        }
+                        
+                        // 使用原有的 showResult 函数（完全不变）
+                        setTimeout(() => {
+                            showResult(fullContent);
+                            hideLoading();
+                            generateBtn.disabled = false;
+                            
+                            // ✅ 修改：隐藏两个关键字输入框（对话输入框保持显示）
+                            const keywordSection = document.getElementById('keywordSection');
+                            const keywordSection2 = document.getElementById('keywordSection2');
+                            if (keywordSection) {
+                                keywordSection.style.display = 'none';
+                            }
+                            if (keywordSection2) {
+                                keywordSection2.style.display = 'none';
+                            }
+                            
+                            // ✅ 修改：更新对话输入框提示文字
+                            const chatHint = document.querySelector('#chatSection .keyword-hint');
+                            if (chatHint) {
+                                chatHint.textContent = '💡 提示：可以继续输入问题，点击"发送"按钮继续对话，表格将在上方重新生成';
+                            }
+                            
+                            // ✅ 修改：恢复对话输入框并清空内容
+                            const chatInput = document.getElementById('chatInput');
+                            chatInput.disabled = false;
+                            chatInput.value = ''; // 清空输入框，为下一轮对话准备
+                            
+                            isFirstGeneration = false;
+                        }, 300);
+                    },
+                    // onError: 错误处理
+                    (error) => {
+                        throw error;
+                    },
+                    // ✅ 修复：立即保存 conversation_id（从SSE流中提取）
+                    (conversationId) => {
+                        console.log('🔍 onConversationId 回调被调用:', conversationId);
+                        if (conversationId && conversationId.trim() !== "") {
+                            currentConversationId = conversationId;
+                            console.log('✅ generateTestCase - 保存对话ID:', currentConversationId);
+                        } else {
+                            console.warn('❌ conversationId 无效，未保存');
+                        }
+                    }
+                );
+
+            } catch (error) {
+                console.error('错误:', error);
+                showError(error.message || '处理过程中发生错误，请重试');
+                hideLoading();
+                generateBtn.disabled = false;
+                
+                // 出错时也要恢复对话输入框
+                const chatInput = document.getElementById('chatInput');
+                if (chatInput) {
+                    chatInput.disabled = false;
+                }
+            }
+        }
+
+        async function uploadFile(file, user) {
+            const fileType = getFileType(file.name);
+            const mimeType = getMimeType(fileType);
+
+            const formData = new FormData();
+            formData.append('file', file, file.name);
+            formData.append('user', user);
+            formData.append('type', fileType);
+
+            const response = await fetch(URL_FILE, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${API_KEY}`
+                },
+                body: formData
+            });
+
+            if (response.status === 201) {
+                const data = await response.json();
+                return data.id;
+            } else {
+                const errorText = await response.text();
+                throw new Error(`上传失败: ${response.status} - ${errorText}`);
+            }
+        }
+
+        async function callWorkflow(fileId, user, keywords, keywords2) {
+            const inputs = {
+                "files": {  // 修正：使用单个对象，不是数组（根据测试脚本）
+                    transfer_method: "local_file",
+                    upload_file_id: fileId,
+                    type: "document"
+                }
+            };
+            
+            // 如果用户输入了关键字，添加到inputs中
+            // 工作流中的输入变量名为 "input"（对应工作流中的 (x) input 端口）
+            if (keywords) {
+                inputs["input"] = keywords;
+            }
+            
+            // 如果用户输入了横行关键字，添加到inputs中
+            // 工作流中的输入变量名为 "input2"（对应工作流中的 (x) input2 端口）
+            if (keywords2) {
+                inputs["input2"] = keywords2;
+            }
+            
+            const data = {
+                inputs: inputs,
+                query: "生成测试用例",
+                conversation_id: "",
+                response_mode: "blocking",
+                user: user
+            };
+
+            const response = await fetch(URL_WORK, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                // 提取答案内容
+                if (result.answer) {
+                    return result.answer;
+                } else {
+                    return JSON.stringify(result, null, 2);
+                }
+            } else {
+                const errorText = await response.text();
+                throw new Error(`工作流执行失败: ${response.status} - ${errorText}`);
+            }
+        }
+
+        // 流式处理函数（根据测试脚本修改）
+        async function callWorkflowStreaming(fileId, user, keywords, keywords2, query, conversationId, onChunk, onComplete, onError, onConversationId) {
+            // 根据成功的测试脚本修改数据结构
+            const inputs = {
+                "files": {  // 修正：使用单个对象，不是数组（根据测试脚本）
+                    transfer_method: "local_file",
+                    upload_file_id: fileId,
+                    type: "document"
+                }
+            };
+            
+            // 如果用户输入了关键字，添加到inputs中
+            // 工作流中的输入变量名为 "input"（对应工作流中的 (x) input 端口）
+            if (keywords) {
+                inputs["input"] = keywords;
+            }
+            
+            // 如果用户输入了横行关键字，添加到inputs中
+            // 工作流中的输入变量名为 "input2"（对应工作流中的 (x) input2 端口）
+            if (keywords2) {
+                inputs["input2"] = keywords2;
+            }
+            
+            const data = {
+                inputs: inputs,
+                query: query || "生成测试用例", // 支持自定义查询
+                response_mode: "streaming",
+                user: user
+            };
+            
+            // ✅ 修复：只有在 conversationId 有值时才传递，否则不传（让 Dify 创建新对话）
+            if (conversationId && conversationId.trim() !== "") {
+                data.conversation_id = conversationId;
+                console.log('✅ 使用已有对话ID:', conversationId);
+            } else {
+                console.log('🆕 创建新对话（未传递 conversation_id）');
+            }
+
+            // ✅ 输出请求参数日志
+            console.log('📤 callWorkflowStreaming - 发送请求:', {
+                query: data.query,
+                conversation_id: data.conversation_id || '(新对话)',
+                hasFile: !!fileId,
+                hasKeywords: !!keywords,
+                hasKeywords2: !!keywords2
+            });
+            
+            // ✅ 输出完整请求参数（用于调试）
+            console.log('📤 完整请求参数:', JSON.stringify(data, null, 2));
+
+            try {
+                // 完全复用原有的 fetch 调用结构，只添加 Accept 头
+                const response = await fetch(URL_WORK, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'  // 新增：指定接受SSE格式
+                    },
+                    body: JSON.stringify(data)  // 完全相同的请求体
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`工作流执行失败: ${response.status} - ${errorText}`);
+                }
+
+                // 以下是新增的流式处理逻辑（前端处理，不影响 API 调用）
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let fullContent = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        break;
+                    }
+
+                    // 解码数据块
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    // 处理SSE格式数据
+                    // SSE格式：每个事件以 \n\n 分隔
+                    // 注意：JSON内容可能很长，可能被分割成多个chunk，需要正确处理
+                    
+                    while (true) {
+                        // 查找完整的事件（以 \n\n 结尾）
+                        const eventEndIndex = buffer.indexOf('\n\n');
+                        if (eventEndIndex === -1) {
+                            // 没有完整的事件，保留到buffer等待更多数据
+                            break;
+                        }
+                        
+                        // 提取完整的事件
+                        const eventBlock = buffer.substring(0, eventEndIndex);
+                        buffer = buffer.substring(eventEndIndex + 2); // 移除已处理的事件和分隔符
+                        
+                        const trimmedBlock = eventBlock.trim();
+                        if (!trimmedBlock) continue;
+                        
+                        // 查找 data: 开头的行
+                        const lines = trimmedBlock.split('\n');
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
+                            if (trimmedLine.startsWith('data: ')) {
+                                try {
+                                    // 移除 "data: " 前缀（6个字符）
+                                    const jsonStr = trimmedLine.substring(6);
+                                    
+                                    // 尝试解析JSON
+                                    const event = JSON.parse(jsonStr);
+                                    
+                                    // ✅ 修复：从每个事件中提取 conversation_id（立即保存）
+                                    if (event.conversation_id && onConversationId) {
+                                        const convId = event.conversation_id;
+                                        if (convId && typeof convId === 'string' && convId.trim() !== "") {
+                                            console.log('📥 提取到 conversation_id:', convId, '事件类型:', event.event);
+                                            onConversationId(convId);
+                                        }
+                                    }
+                                    
+                                    // 处理不同类型的事件
+                                    if (event.event === 'message' || event.event === 'message_file') {
+                                        // 累积答案内容
+                                        if (event.answer) {
+                                            fullContent += event.answer;
+                                            // 实时回调更新UI
+                                            onChunk(event.answer, fullContent);
+                                        }
+                                    } else if (event.event === 'message_end') {
+                                        // 流式输出完成
+                                        onComplete(fullContent, event);
+                                        return fullContent;
+                                    } else if (event.event === 'error') {
+                                        throw new Error(event.message || '流式输出错误');
+                                    } else {
+                                        // ✅ 新增：记录其他事件类型（用于调试）
+                                        console.log('📨 收到事件:', event.event, '包含 conversation_id:', !!event.conversation_id);
+                                    }
+                                    // 其他事件类型（如 node_finished, node_started等）可以忽略，不影响主流程
+                                } catch (e) {
+                                    // JSON解析错误处理
+                                    if (e instanceof SyntaxError) {
+                                        // 如果是"Unterminated string"错误，说明JSON不完整
+                                        // 将这部分数据放回buffer，等待更多数据
+                                        if (e.message.includes('Unterminated')) {
+                                            buffer = trimmedBlock + '\n\n' + buffer;
+                                            // 跳出循环，等待更多数据
+                                            break;
+                                        } else {
+                                            // 其他语法错误，记录但继续处理（可能是格式问题）
+                                            console.warn('JSON解析错误（非截断）:', e.message, '原始数据:', trimmedLine.substring(0, 100));
+                                        }
+                                    } else {
+                                        console.error('解析SSE数据错误:', e.message);
+                                    }
+                                }
+                                break; // 处理完一个data行后跳出
+                            }
+                        }
+                    }
+                }
+
+                // 如果循环结束但未收到 message_end，返回已累积的内容
+                if (fullContent) {
+                    onComplete(fullContent, null);
+                    return fullContent;
+                }
+
+            } catch (error) {
+                onError(error);
+                throw error;
+            }
+        }
+
+        function updateProgress(percent, message) {
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            const loading = document.getElementById('loading');
+            
+            progressBar.classList.add('show');
+            progressFill.style.width = percent + '%';
+            
+            if (loading.querySelector('div:last-child')) {
+                loading.querySelector('div:last-child').textContent = message;
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('progressBar').classList.add('show');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('show');
+            document.getElementById('progressBar').classList.remove('show');
+            document.getElementById('progressFill').style.width = '0%';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.remove('show');
+        }
+
+        function parseTable(content) {
+            // 尝试解析Markdown表格格式
+            const lines = content.split('\n');
+            
+            // 查找表格开始（包含 | 的行）
+            let tableStartIndex = -1;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                // 检查是否是表格行：包含|且至少有2个|
+                const pipeCount = (line.match(/\|/g) || []).length;
+                if (pipeCount >= 2 && line.includes('|')) {
+                    tableStartIndex = i;
+                    break;
+                }
+            }
+            
+            if (tableStartIndex === -1) {
+                console.log('未找到表格格式');
+                return null; // 没有找到表格格式
+            }
+            
+            // 提取表头
+            const headerLine = lines[tableStartIndex].trim();
+            let headers = headerLine.split('|')
+                .map(h => h.trim())
+                .filter(h => h.length > 0);
+            
+            // 如果第一个或最后一个元素为空（因为Markdown表格通常以|开头和结尾），移除它们
+            if (headers.length > 0 && headers[0] === '') headers.shift();
+            if (headers.length > 0 && headers[headers.length - 1] === '') headers.pop();
+            
+            if (headers.length === 0) {
+                console.log('表头为空');
+                return null;
+            }
+            
+            console.log('找到表头:', headers);
+            
+            // 跳过分隔符行（通常是第二行，格式如 |---|---|）
+            let dataStartIndex = tableStartIndex + 1;
+            if (dataStartIndex < lines.length) {
+                const separatorLine = lines[dataStartIndex].trim();
+                // 检查是否是分隔符行（只包含|、-、:、空格）
+                if (separatorLine.match(/^[\s|:\-]+$/) && separatorLine.includes('-')) {
+                    dataStartIndex++;
+                }
+            }
+            
+            // 提取数据行
+            const rows = [];
+            for (let i = dataStartIndex; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // 检查是否是表格行
+                const pipeCount = (line.match(/\|/g) || []).length;
+                if (!line || pipeCount < 2) {
+                    // 如果遇到空行或没有足够|的行，检查是否还有更多表格行
+                    // 如果下一行也是表格行，继续；否则结束
+                    if (i + 1 < lines.length) {
+                        const nextLine = lines[i + 1].trim();
+                        const nextPipeCount = (nextLine.match(/\|/g) || []).length;
+                        if (nextPipeCount >= 2) {
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                
+                let cells = line.split('|')
+                    .map(cell => cell.trim());
+                
+                // 移除首尾空元素
+                if (cells.length > 0 && cells[0] === '') cells.shift();
+                if (cells.length > 0 && cells[cells.length - 1] === '') cells.pop();
+                
+                // 确保列数与表头一致
+                while (cells.length < headers.length) {
+                    cells.push('');
+                }
+                if (cells.length > headers.length) {
+                    cells = cells.slice(0, headers.length);
+                }
+                
+                // 只添加非空行
+                if (cells.some(cell => cell.length > 0)) {
+                    rows.push(cells);
+                }
+            }
+            
+            console.log('解析到', rows.length, '行数据');
+            
+            if (rows.length === 0) {
+                return null;
+            }
+            
+            return { headers, rows };
+        }
+
+        function createTableHTML(headers, rows) {
+            let html = '<table class="result-table"><thead><tr>';
+            
+            // 创建表头
+            headers.forEach(header => {
+                html += `<th>${escapeHtml(header)}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // 创建数据行
+            rows.forEach(row => {
+                html += '<tr>';
+                // 确保每行的列数与表头一致
+                for (let i = 0; i < headers.length; i++) {
+                    const cellContent = row[i] || '';
+                    html += `<td>${escapeHtml(cellContent)}</td>`;
+                }
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 尝试从文本中提取表格数据（更宽松的解析）
+        function parseTableLoose(content) {
+            const lines = content.split('\n');
+            const tableLines = [];
+            
+            // 找到所有包含|的行
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                const pipeCount = (line.match(/\|/g) || []).length;
+                if (pipeCount >= 2) {
+                    tableLines.push({ index: i, line: line });
+                }
+            }
+            
+            if (tableLines.length < 2) {
+                return null; // 至少需要表头和数据行
+            }
+            
+            // 第一行作为表头
+            const headerLine = tableLines[0].line;
+            let headers = headerLine.split('|')
+                .map(h => h.trim())
+                .filter(h => h && !h.match(/^[-:]+$/));
+            
+            if (headers.length === 0) {
+                return null;
+            }
+            
+            // 从第二行开始（跳过可能是分隔符的行）
+            let startIdx = 1;
+            if (tableLines.length > 1) {
+                const secondLine = tableLines[1].line;
+                if (secondLine.match(/^[\s|:\-]+$/)) {
+                    startIdx = 2; // 跳过分隔符行
+                }
+            }
+            
+            const rows = [];
+            for (let i = startIdx; i < tableLines.length; i++) {
+                const line = tableLines[i].line;
+                let cells = line.split('|')
+                    .map(cell => cell.trim());
+                
+                // 移除首尾空元素
+                if (cells[0] === '') cells.shift();
+                if (cells[cells.length - 1] === '') cells.pop();
+                
+                // 确保列数一致
+                while (cells.length < headers.length) {
+                    cells.push('');
+                }
+                if (cells.length > headers.length) {
+                    cells = cells.slice(0, headers.length);
+                }
+                
+                if (cells.some(c => c.length > 0)) {
+                    rows.push(cells);
+                }
+            }
+            
+            if (rows.length === 0) {
+                return null;
+            }
+            
+            return { headers, rows };
+        }
+
+        function showResult(content) {
+            const resultSection = document.getElementById('resultSection');
+            const resultTableWrapper = document.getElementById('resultTableWrapper');
+            const resultContent = document.getElementById('resultContent');
+            const downloadBtn = document.getElementById('downloadBtn');
+            
+            // 保存原始内容
+            currentRawContent = content;
+            
+            // 尝试解析为表格（先用严格模式，再用宽松模式）
+            let tableData = parseTable(content);
+            if (!tableData) {
+                tableData = parseTableLoose(content);
+            }
+            
+            // 保存表格数据
+            currentTableData = tableData;
+            
+            if (tableData && tableData.headers.length > 0 && tableData.rows.length > 0) {
+                // 显示为表格
+                resultTableWrapper.innerHTML = createTableHTML(tableData.headers, tableData.rows);
+                resultContent.style.display = 'none';
+                console.log('✓ 成功显示为表格，', tableData.headers.length, '列，', tableData.rows.length, '行');
+            } else {
+                // 显示为文本
+                resultTableWrapper.innerHTML = '';
+                resultContent.textContent = content;
+                resultContent.style.display = 'block';
+                console.log('✗ 无法解析为表格，显示为文本');
+            }
+            
+            // 显示下载按钮
+            downloadBtn.style.display = 'inline-flex';
+            
+            resultSection.classList.add('show');
+            // 滚动到结果区域
+            resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function hideResult() {
+            document.getElementById('resultSection').classList.remove('show');
+            document.getElementById('downloadBtn').style.display = 'none';
+            currentTableData = null;
+            currentRawContent = null;
+        }
+
+        function downloadResult() {
+            if (!currentTableData && !currentRawContent) {
+                showError('没有可下载的内容');
+                return;
+            }
+
+            // 生成文件名（带时间戳）
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            let filename = `测试用例_${timestamp}`;
+            let content = '';
+            let mimeType = '';
+            let extension = '';
+
+            if (currentTableData && currentTableData.headers.length > 0) {
+                // 导出为CSV格式
+                extension = '.csv';
+                filename += extension;
+                
+                // CSV格式：使用逗号分隔，处理包含逗号、引号、换行的内容
+                const escapeCSV = (text) => {
+                    if (!text) return '';
+                    // 如果包含逗号、引号或换行，需要用引号包裹，并转义引号
+                    if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+                        return '"' + text.replace(/"/g, '""') + '"';
+                    }
+                    return text;
+                };
+
+                // 表头
+                content = currentTableData.headers.map(escapeCSV).join(',') + '\n';
+                
+                // 数据行
+                currentTableData.rows.forEach(row => {
+                    content += row.map(escapeCSV).join(',') + '\n';
+                });
+                
+                mimeType = 'text/csv;charset=utf-8;';
+            } else if (currentRawContent) {
+                // 导出为文本格式
+                extension = '.txt';
+                filename += extension;
+                content = currentRawContent;
+                mimeType = 'text/plain;charset=utf-8;';
+            }
+
+            // 创建Blob并下载
+            const blob = new Blob(['\ufeff' + content], { type: mimeType }); // \ufeff 是BOM，确保Excel正确识别UTF-8
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // ========== 对话功能相关函数 ==========
+
+        // 发送对话消息（使用独立发送按钮）
+        async function sendChatMessage() {
+            const chatInput = document.getElementById('chatInput');
+            const query = chatInput.value.trim();
+            
+            if (!query) {
+                showError('请输入您的问题');
+                return;
+            }
+            
+            // 检查是否有文件和对话ID
+            if (!currentFileId) {
+                showError('请先上传文档并生成测试用例');
+                return;
+            }
+            
+            if (!currentConversationId) {
+                showError('对话ID丢失，请重新生成测试用例');
+                return;
+            }
+            
+            // 禁用输入框和按钮
+            chatInput.disabled = true;
+            const sendBtn = document.getElementById('sendChatBtn');
+            sendBtn.disabled = true;
+            sendBtn.textContent = '发送中...';
+            
+            // 显示加载状态
+            showLoading();
+            
+            try {
+                // 准备结果区域
+                const resultSection = document.getElementById('resultSection');
+                const resultTableWrapper = document.getElementById('resultTableWrapper');
+                const resultContent = document.getElementById('resultContent');
+                const resultContentContainer = resultContent.parentElement;
+                
+                // ✅ 修改：先清空之前的表格内容，让新表格重新流式输出
+                resultTableWrapper.innerHTML = ''; // 清空表格
+                resultContent.textContent = ''; // 清空文本内容
+                resultContent.style.display = 'block'; // 显示文本模式（用于流式输出）
+                
+                resultSection.classList.add('show');
+                
+                let accumulatedContent = '';
+                
+                // 调用工作流（使用已有的 conversation_id）
+                await callWorkflowStreaming(
+                    currentFileId,
+                    DEFAULT_USER,
+                    savedKeywords,  // 复用首次生成时的关键字
+                    savedKeywords2,
+                    query,  // 用户新输入的问题
+                    currentConversationId,  // 使用已有的对话ID
+                    // onChunk
+                    (chunk, fullContent) => {
+                        accumulatedContent = fullContent;
+                        resultContent.textContent = fullContent;
+                        // 滚动到底部
+                        if (resultContentContainer) {
+                            resultContentContainer.scrollTop = resultContentContainer.scrollHeight;
+                        }
+                    },
+                    // onComplete
+                    (fullContent, event) => {
+                        showResult(fullContent);
+                        hideLoading();
+                        
+                        // 更新 conversation_id（如果变化）
+                        if (event && event.conversation_id) {
+                            currentConversationId = event.conversation_id;
+                        }
+                        
+                        // 恢复输入框和按钮
+                        chatInput.disabled = false;
+                        chatInput.value = '';
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = '发送';
+                        chatInput.focus();
+                    },
+                    // onError
+                    (error) => {
+                        hideLoading();
+                        showError('对话发送失败：' + error.message);
+                        chatInput.disabled = false;
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = '发送';
+                    },
+                    // onConversationId
+                    (conversationId) => {
+                        if (conversationId && conversationId.trim() !== "") {
+                            currentConversationId = conversationId;
+                        }
+                    }
+                );
+            } catch (error) {
+                console.error('对话错误:', error);
+                hideLoading();
+                showError('对话发送失败，请重试');
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = '发送';
+            }
+        }
+
+        // 发送消息到工作流（在结果区域重新生成表格）
+        async function sendMessage(userQuery) {
+            console.log('🔍 sendMessage 开始');
+            console.log('🔍 currentConversationId:', currentConversationId);
+            console.log('🔍 currentFileId:', currentFileId);
+            
+            if (!userQuery.trim()) {
+                showError('请输入您的问题');
+                return;
+            }
+            
+            // 检查是否有文件和对话ID（对话需要基于已上传的文档）
+            if (!currentFileId) {
+                showError('请先上传文档并生成测试用例');
+                return;
+            }
+            
+            // 隐藏错误和结果
+            hideError();
+            
+            // 显示加载状态
+            showLoading();
+            
+            // 准备结果区域，准备流式显示（与generateTestCase相同）
+            const resultSection = document.getElementById('resultSection');
+            const resultTableWrapper = document.getElementById('resultTableWrapper');
+            const resultContent = document.getElementById('resultContent');
+            const resultContentContainer = resultContent.parentElement;
+            
+            resultSection.classList.add('show');
+            resultTableWrapper.innerHTML = '';
+            resultContent.textContent = '';
+            resultContent.style.display = 'block';
+            
+            try {
+                // 使用保存的关键字（复用首次生成时的关键字）
+                // 这些关键字已经在首次生成时转换过格式，直接使用即可
+                let keywords = savedKeywords || '';
+                let keywords2 = savedKeywords2 || '';
+                
+                // 如果保存的关键字为空，尝试从输入框获取并转换（向后兼容）
+                if (!keywords) {
+                    const keywordInput = document.getElementById('keywordInput');
+                    keywords = keywordInput.value.trim();
+                    if (keywords) {
+                        keywords = keywords.replace(/[，,]/g, ' | ');
+                        keywords = keywords.replace(/\s*\|\s*\|\s*/g, ' | ');
+                        keywords = keywords.replace(/^\s*\|\s*|\s*\|\s*$/g, '').trim();
+                    }
+                }
+                if (!keywords2) {
+                    const keywordInput2 = document.getElementById('keywordInput2');
+                    keywords2 = keywordInput2.value.trim();
+                    if (keywords2) {
+                        keywords2 = keywords2.replace(/[，,]/g, '、');
+                        keywords2 = keywords2.replace(/、+/g, '、');
+                        keywords2 = keywords2.replace(/^、+|、+$/g, '').trim();
+                    }
+                }
+                
+                // 更新进度提示
+                updateProgress(60, '正在生成中...');
+                
+                let accumulatedContent = '';
+                
+                // 调用工作流（使用conversation_id，在结果区域流式显示）
+                // ✅ 修复：确保传递有效的 conversation_id
+                const conversationIdToUse = (currentConversationId && currentConversationId.trim() !== "") 
+                    ? currentConversationId 
+                    : null;
+                
+                console.log('🔍 conversationIdToUse:', conversationIdToUse);
+                console.log('📤 sendMessage - 发送请求:', {
+                    hasConversationId: !!conversationIdToUse,
+                    conversationId: conversationIdToUse || '(将创建新对话)',
+                    query: userQuery,
+                    fileId: currentFileId
+                });
+                
+                await callWorkflowStreaming(
+                    currentFileId,
+                    DEFAULT_USER,
+                    keywords,
+                    keywords2,
+                    userQuery,  // 用户查询
+                    conversationIdToUse,  // 对话ID（null 表示新对话）
+                    // onChunk: 流式更新显示内容（与generateTestCase相同）
+                    (chunk, fullContent) => {
+                        accumulatedContent = fullContent;
+                        // 实时更新显示内容
+                        resultContent.textContent = fullContent;
+                        // 滚动到底部
+                        if (resultContentContainer) {
+                            resultContentContainer.scrollTop = resultContentContainer.scrollHeight;
+                        }
+                        // 更新进度提示
+                        updateProgress(60 + Math.min(35, fullContent.length / 100), '正在生成中...');
+                    },
+                    // onComplete: 完成（与generateTestCase相同）
+                    (fullContent, event) => {
+                        accumulatedContent = fullContent;
+                        updateProgress(100, '完成');
+                        
+                        // 更新conversation_id（如果存在，作为备用）
+                        if (event && event.conversation_id) {
+                            currentConversationId = event.conversation_id;
+                            console.log('更新对话ID（onComplete备用）:', currentConversationId);
+                        }
+                        
+                        // 使用showResult函数显示表格（与generateTestCase相同）
+                        setTimeout(() => {
+                            showResult(fullContent);
+                            hideLoading();
+                        }, 300);
+                    },
+                    // onError: 错误处理
+                    (error) => {
+                        hideLoading();
+                        showError('对话发送失败：' + error.message);
+                    },
+                    // ✅ 修复：立即保存 conversation_id（从SSE流中提取）
+                    (conversationId) => {
+                        console.log('🔍 onConversationId 回调被调用（sendMessage）:', conversationId);
+                        if (conversationId && conversationId.trim() !== "") {
+                            currentConversationId = conversationId;
+                            console.log('✅ sendMessage - 保存对话ID:', currentConversationId);
+                        } else {
+                            console.warn('❌ conversationId 无效，未保存（sendMessage）');
+                        }
+                    }
+                );
+            } catch (error) {
+                console.error('对话错误:', error);
+                hideLoading();
+                showError('对话发送失败，请重试');
+            }
+        }
+
+        // 添加键盘快捷键支持（Enter发送，Shift+Enter换行）
+        document.addEventListener('DOMContentLoaded', function() {
+            // ✅ 新增：绑定发送按钮点击事件
+            const sendChatBtn = document.getElementById('sendChatBtn');
+            if (sendChatBtn) {
+                sendChatBtn.addEventListener('click', sendChatMessage);
+            }
+            
+            // ✅ 修改：绑定输入框 Enter 键事件（根据是否有 conversation_id 决定行为）
+            const chatInput = document.getElementById('chatInput');
+            if (chatInput) {
+                chatInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        // 如果已经有 conversation_id，点击发送按钮；否则点击生成测试用例按钮
+                        if (currentConversationId) {
+                            sendChatMessage();
+                        } else {
+                            generateTestCase();
+                        }
+                    }
+                });
+            }
+            
+            // 绑定按钮点击事件
+            const generateBtn = document.getElementById('generateBtn');
+            const clearBtnBottom = document.getElementById('clearBtnBottom');
+            
+            if (generateBtn) {
+                generateBtn.addEventListener('click', generateTestCase);
+            }
+            
+            if (clearBtnBottom) {
+                clearBtnBottom.addEventListener('click', clearAll);
+            }
+        });
+    </script>
+</body>
+</html>

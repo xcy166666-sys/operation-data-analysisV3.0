@@ -3,7 +3,7 @@
     <div class="login-content">
       <div class="login-header">
         <h1 class="title">运营数据分析系统</h1>
-        <p class="subtitle">{{ isAdminLogin ? '使用管理员账号登录' : '登录您的账户' }}</p>
+        <p class="subtitle">登录您的账户</p>
       </div>
       
       <el-form
@@ -43,29 +43,8 @@
         </el-button>
       </el-form>
       
-      <div class="login-switch">
-        <el-button
-          v-if="!isAdminLogin"
-          type="text"
-          @click="switchToAdmin"
-          style="width: 100%; color: var(--el-color-primary)"
-        >
-          <el-icon><User /></el-icon>
-          切换到管理员登录
-        </el-button>
-        <el-button
-          v-else
-          type="text"
-          @click="switchToNormal"
-          style="width: 100%"
-        >
-          <el-icon><ArrowLeft /></el-icon>
-          返回普通登录
-        </el-button>
-      </div>
-      
-      <!-- 注册按钮（仅普通登录模式显示） -->
-      <div class="register-section" v-if="!isAdminLogin">
+      <!-- 注册按钮 -->
+      <div class="register-section">
         <el-button
           type="text"
           @click="showRegisterDialog = true"
@@ -73,10 +52,6 @@
         >
           还没有账号？立即注册
         </el-button>
-      </div>
-      
-      <div class="login-tips" v-if="isAdminLogin">
-        <p>管理员账号: <code>admin7</code> / <code>admin123456</code></p>
       </div>
     </div>
 
@@ -148,13 +123,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, ArrowLeft } from '@element-plus/icons-vue'
-import { login, register } from '@/api/auth'
+import { login, register, type LoginResponse } from '@/api/auth'
 import { useAuthStore } from '@/store/auth'
 import type { FormInstance, FormRules } from 'element-plus'
+import type { ApiResponse } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -165,11 +140,6 @@ const registerLoading = ref(false)
 const loginFormRef = ref()
 const registerFormRef = ref<FormInstance>()
 const showRegisterDialog = ref(false)
-
-// 判断是否为管理员登录模式
-const isAdminLogin = computed(() => {
-  return route.query.admin === 'true'
-})
 
 const loginForm = reactive({
   username: '',
@@ -194,7 +164,7 @@ const loginRules = {
 }
 
 // 验证确认密码
-const validateConfirmPassword = (rule: any, value: any, callback: any) => {
+const validateConfirmPassword = (_rule: any, value: any, callback: any) => {
   if (value !== registerForm.password) {
     callback(new Error('两次输入的密码不一致'))
   } else {
@@ -235,34 +205,25 @@ const handleLogin = async () => {
     try {
       const res = await login(loginForm)
       
-      if (res.success && res.data) {
-        // 如果是管理员登录模式，只允许 admin7 登录
-        if (isAdminLogin.value) {
-          if (res.data.user.username !== 'admin7') {
-            ElMessage.error('管理员登录界面仅允许 admin7 账号登录')
-            loading.value = false
-            return
-          }
-          if (!res.data.user.is_superadmin && !res.data.user.is_admin) {
-            ElMessage.error('该账号不是管理员账号')
-            loading.value = false
-            return
-          }
-        }
-        
-        authStore.setAuth(res.data.user, res.data.token)
+      const loginResponse = res as unknown as ApiResponse<LoginResponse>
+      if (loginResponse.success && loginResponse.data) {
+        // 保存用户信息和token
+        const loginData = loginResponse.data
+        authStore.setAuth(loginData.user, loginData.token)
         ElMessage.success('登录成功')
         
-        // 如果是管理员登录，跳转到用户管理页面
-        if (isAdminLogin.value && (res.data.user.is_superadmin || res.data.user.is_admin)) {
+        // 根据用户权限自动跳转
+        if (loginData.user.is_superadmin || loginData.user.is_admin) {
+          // 管理员用户：跳转到管理员界面
           router.push({ name: 'admin-users' })
         } else {
-          // 普通用户登录，跳转到首页或指定页面
+          // 普通用户：跳转到首页或指定页面
           const redirect = route.query.redirect as string
           router.push(redirect || '/')
         }
       } else {
-        ElMessage.error(res.message || '登录失败')
+        const loginErrorResponse = res as unknown as ApiResponse<any>
+        ElMessage.error(loginErrorResponse.message || '登录失败')
       }
     } catch (error: any) {
       console.error('登录失败:', error)
@@ -277,14 +238,6 @@ const handleLogin = async () => {
       loading.value = false
     }
   })
-}
-
-const switchToAdmin = () => {
-  router.push({ name: 'login', query: { admin: 'true' } })
-}
-
-const switchToNormal = () => {
-  router.push({ name: 'login' })
 }
 
 // 注册处理
@@ -307,15 +260,18 @@ const handleRegister = async () => {
         full_name: registerForm.full_name || undefined
       })
       
-      if (res.success && res.data) {
-        authStore.setAuth(res.data.user, res.data.token)
+      const registerResponse = res as unknown as ApiResponse<LoginResponse>
+      if (registerResponse.success && registerResponse.data) {
+        const loginData = registerResponse.data
+        authStore.setAuth(loginData.user, loginData.token)
         ElMessage.success('注册成功，已自动登录')
         showRegisterDialog.value = false
         
         // 跳转到首页
         router.push({ name: 'home' })
       } else {
-        ElMessage.error(res.message || '注册失败')
+        const registerErrorResponse = res as unknown as ApiResponse<any>
+      ElMessage.error(registerErrorResponse.message || '注册失败')
       }
     } catch (error: any) {
       console.error('注册失败:', error)

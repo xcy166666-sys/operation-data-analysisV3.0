@@ -32,19 +32,31 @@ class AuthService:
         Returns:
             验证成功返回User对象，失败返回None
         """
+        from loguru import logger
+        
+        # 去除用户名前后空格（防止前端输入时误加空格）
+        username = username.strip() if username else ""
+        if not username:
+            logger.debug("用户名为空")
+            return None
+        
         # 查询用户
         user = db.query(User).filter(User.username == username).first()
         if not user:
+            logger.debug(f"用户不存在: username={username}")
             return None
         
         # 验证密码
         if not verify_password(password, user.password_hash):
+            logger.debug(f"密码验证失败: username={username}")
             return None
         
         # 检查用户状态
         if not user.is_active:
+            logger.debug(f"用户未激活: username={username}")
             return None
         
+        logger.debug(f"用户认证成功: username={username}, user_id={user.id}")
         return user
     
     @staticmethod

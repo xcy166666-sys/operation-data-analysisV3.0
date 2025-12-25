@@ -81,16 +81,37 @@ docker-compose exec backend bash
 
 # 运行数据库迁移
 alembic upgrade head
+```
 
-# 创建初始管理员用户（可选）
+**重要**：系统会在首次启动时**自动初始化**功能模块和 Dify API 工作流配置，无需手动配置！
+
+### 5. 创建管理员账号
+
+```bash
+# 进入后端容器
+docker-compose exec backend bash
+
+# 创建管理员账号
 python scripts/create_admin.py
 ```
 
-### 5. 访问系统
+### 6. 访问系统
 
-- **前端**：http://localhost:80
-- **后端API**：http://localhost:8000
-- **API文档**：http://localhost:8000/docs
+- **前端**：http://localhost:20800
+- **后端API**：http://localhost:21800
+- **API文档**：http://localhost:21800/docs
+- **健康检查**：http://localhost:21800/health
+
+## 自动初始化说明
+
+系统首次启动时会自动执行以下初始化：
+
+1. **功能模块初始化**：自动创建 3 个功能模块
+2. **工作流配置初始化**：自动配置 8 个 Dify 工作流（API 配置已硬编码在代码中）
+
+**无需手动配置 API**，系统已预设好所有 Dify API 配置，开箱即用！
+
+如需修改 API 配置，请编辑 `backend/scripts/setup_all_workflows.py` 文件。
 
 ## 项目结构
 
@@ -156,14 +177,23 @@ npm run dev
 
 ## 配置工作流
 
-1. 登录系统后，点击右上角的"配置工作流"按钮
-2. 选择AI平台（推荐Dify）
-3. 填写配置信息：
-   - **Dify API地址**：例如 `https://api.dify.ai/v1`
-   - **API Key**：您的Dify API密钥
-   - **工作流ID**：Dify工作流的ID
-   - **工作流类型**：Workflow 或 Chatflow
-4. 保存配置
+### 自动配置（推荐）
+
+系统已自动配置好所有 Dify API 工作流，**无需手动配置**！
+
+### 手动配置（可选）
+
+如果需要修改 API 配置：
+
+1. **通过前端管理界面**（推荐）：
+   - 登录超级管理员账号
+   - 进入"功能管理"页面
+   - 点击"配置API"按钮修改配置
+
+2. **通过代码修改**：
+   - 编辑 `backend/scripts/setup_all_workflows.py`
+   - 修改 `WORKFLOWS_CONFIG` 中的 API 配置
+   - 重启后端服务：`docker-compose restart backend`
 
 ## API文档
 

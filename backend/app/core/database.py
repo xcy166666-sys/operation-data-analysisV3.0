@@ -11,7 +11,7 @@ from app.core.config import settings
 
 # 创建数据库引擎
 engine = create_engine(
-    settings.DATABASE_URL,
+    settings.database_url,  # 使用计算属性，自动处理密码中的特殊字符
     pool_pre_ping=True,  # 连接前先ping，确保连接有效
     pool_size=20,  # 连接池大小
     max_overflow=40,  # 最大溢出连接数

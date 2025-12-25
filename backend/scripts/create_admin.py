@@ -31,7 +31,7 @@ def create_admin_user():
             password_hash=get_password_hash("admin123456"),  # 默认密码，请修改
             full_name="系统管理员",
             email="admin@example.com",
-            is_superadmin=True,
+            is_admin=True,
             is_active=True
         )
         

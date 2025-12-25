@@ -5,14 +5,14 @@ import asyncio
 import base64
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from loguru import logger
 
 from app.models.batch_analysis import BatchAnalysisSession, SheetReport
-from app.services.workflow_service import WorkflowService
-from app.services.dify_service import DifyService
-from app.utils.echarts_parser import parse_echarts_from_text
+from app.services.chart_generator import ChartGenerator
+from app.services.report_merger import ReportMerger
+from app.services.bailian_service import BailianService, FIXED_TEXT_REPORT_PROMPT
 
 # 固定项目ID（单项目系统）
 DEFAULT_PROJECT_ID = 1
@@ -25,11 +25,13 @@ async def process_sheet_analysis(
     analysis_request: str,
     batch_session_id: int,
     user_id: int,
-    db: Session
+    db: Session,
+    chart_customization_prompt: Optional[str] = None,
+    chart_generation_mode: str = "html"
 ) -> dict:
     """
     处理单个Sheet的分析任务（简化版，移除project_id参数）
-    复用现有的 generate_report 逻辑，直接调用Dify工作流
+    使用阿里百炼生成文字报告和HTML图表
     """
     try:
         # 1. 更新报告状态为 generating
@@ -41,49 +43,7 @@ async def process_sheet_analysis(
         db.commit()
         logger.info(f"[批量分析] Sheet {sheet_name} 开始分析 - report_id={sheet_report_id}")
         
-        # 2. 获取绑定的Dify工作流（优先使用用户配置）
-        function_key = "operation_data_analysis"
-        binding = WorkflowService.get_function_workflow(db, function_key, user_id)
-        
-        if not binding:
-            raise Exception(f"尚未配置运营数据分析工作流")
-        
-        workflow = WorkflowService.get_workflow_by_id(db, binding.workflow_id)
-        if not workflow or not workflow.is_active:
-            raise Exception("工作流不存在或已禁用")
-        
-        if workflow.platform != "dify":
-            raise Exception(f"当前工作流平台为 {workflow.platform}，仅支持 Dify 平台")
-        
-        workflow_config = workflow.config
-        api_key = workflow_config.get("api_key")
-        url_file = workflow_config.get("url_file")  # 文件上传URL
-        url_work = workflow_config.get("url_work")  # 工作流URL
-        file_param = workflow_config.get("file_param", "excell")  # 文件参数名
-        query_param = workflow_config.get("query_param", "query")  # 对话参数名
-        workflow_type = workflow_config.get("workflow_type", "chatflow")
-        
-        # 兼容旧配置格式
-        if not url_file:
-            api_url = workflow_config.get("api_url")
-            if api_url:
-                url_file = f"{api_url.rstrip('/')}/files/upload"
-        if not url_work:
-            api_url = workflow_config.get("api_url")
-            if api_url:
-                url_work = f"{api_url.rstrip('/')}/chat-messages"
-        
-        if not all([api_key, url_file, url_work]):
-            raise Exception("工作流配置不完整，请检查API Key、文件上传URL和工作流URL")
-        
-        # 3. 生成Dify用户标识（移除project_id参数）
-        dify_user = DifyService.generate_user_id(
-            user_id=user_id,
-            function_key=function_key,
-            conversation_id=batch_session_id
-        )
-        
-        # 4. 根据工作流类型处理文件
+        # 2. 验证文件路径
         file_path_obj = Path(split_file_path)
         
         # 如果路径是相对路径，尝试多种格式
@@ -110,104 +70,102 @@ async def process_sheet_analysis(
             logger.error(f"[批量分析] 文件验证失败: {str(e)}")
             raise
         
-        if workflow_type == "chatflow":
-            # Chatflow: 先上传文件到Dify
-            logger.info(f"[批量分析] 准备上传文件到Dify - file_path={file_path_obj}, file_size={file_size} bytes, url={url_file}, user_id={dify_user}")
+        # 3. 并行处理：图表生成（阿里百炼API）和文字生成（阿里百炼API）
+        chart_generator = ChartGenerator()
+        bailian_service = BailianService()
+        report_merger = ReportMerger()
+        
+        # 任务1：生成图表（阿里百炼API + HTML）
+        async def generate_charts():
+            # 合并分析需求和图表定制 prompt（用于HTML生成）
+            chart_prompt = analysis_request
+            if chart_customization_prompt:
+                chart_prompt = f"{analysis_request}\n\n图表定制要求：\n{chart_customization_prompt}"
             
-            upload_result = await DifyService.upload_file(
-                api_url=url_file,  # 使用用户配置的文件上传URL
-                api_key=api_key,
+            return await chart_generator.generate_charts_from_excel(
                 file_path=str(file_path_obj),
-                file_name=file_path_obj.name,
-                user_id=dify_user
+                analysis_request=chart_prompt,
+                generate_type=chart_generation_mode,  # "html" 或 "json"
+                chart_customization=chart_customization_prompt if chart_customization_prompt else None
+            )
+        
+        # 任务2：生成文字（阿里百炼API - 改用阿里大模型）
+        async def generate_text():
+            logger.info(f"[批量分析] 调用阿里百炼API生成文字报告 - file_path={file_path_obj}")
+            
+            text_result = await bailian_service.analyze_excel_and_generate_text_report(
+                file_path=str(file_path_obj),
+                user_prompt=analysis_request,  # 用户输入的分析需求
+                fixed_prompt_template=FIXED_TEXT_REPORT_PROMPT  # 固定prompt模板
             )
             
-            if not upload_result.get("success"):
-                error_msg = upload_result.get('error', '未知错误')
-                raise Exception(f"文件上传到Dify失败: {error_msg}")
+            if not text_result.get("success"):
+                error_msg = text_result.get("error", "文字报告生成失败")
+                logger.error(f"[批量分析] 文字报告生成失败 - {error_msg}")
+                return f"文字生成失败：{error_msg}"
             
-            dify_file_id = upload_result.get("data", {}).get("id")
-            if not dify_file_id:
-                raise Exception("Dify文件上传成功但未返回文件ID")
+            text_content = text_result.get("text_content", "")
             
-            # 使用用户配置的参数名
-            inputs = {
-                file_param: dify_file_id,  # 文件参数名（用户配置）
-                query_param: analysis_request,  # 对话参数名（用户配置）
-            }
-        else:
-            # Workflow: 读取文件内容并转换为base64
-            logger.info(f"[批量分析] 读取文件内容转换为base64 - file_path={file_path_obj}")
+            if not isinstance(text_content, str):
+                logger.error(f"[批量分析] text_content 不是字符串，类型: {type(text_content)}")
+                return str(text_content) if text_content else "报告生成失败"
             
-            with open(file_path_obj, "rb") as f:
-                file_content = f.read()
-                file_base64 = base64.b64encode(file_content).decode('utf-8')
-                logger.info(f"[批量分析] 文件内容读取成功 - 大小: {len(file_content)} bytes")
-            
-            inputs = {
-                file_param: file_base64,  # 文件参数名（用户配置）
-                f"sys.{query_param}": analysis_request,  # 对话参数名（用户配置）
-            }
+            logger.info(f"[批量分析] 文字报告生成成功 - 长度: {len(text_content)}")
+            return text_content
         
-        # 5. 调用Dify工作流（使用用户配置的URL）
-        result = await DifyService.run_workflow(
-            api_url=url_work,  # 使用用户配置的工作流URL
-            api_key=api_key,
-            workflow_id="1",  # 固定为1，实际使用url_work
-            user_id=user_id,
-            function_key=function_key,
-            inputs=inputs,
-            conversation_id=batch_session_id,
-            response_mode="blocking",
-            workflow_type=workflow_type
+        # 并行执行
+        charts_task = generate_charts()
+        text_task = generate_text()
+        
+        charts_result, report_text = await asyncio.gather(
+            charts_task,
+            text_task,
+            return_exceptions=True
         )
         
-        if not result.get("success"):
-            raise Exception(f"Dify工作流执行失败: {result.get('error')}")
+        # 处理异常
+        if isinstance(charts_result, Exception):
+            logger.error(f"[批量分析] 图表生成异常: {charts_result}")
+            charts_result = {"success": False, "charts": [], "data_summary": {}, "error": str(charts_result)}
         
-        # 6. 解析Dify返回的结果
-        dify_data = result.get("data", {})
+        if isinstance(report_text, Exception):
+            logger.error(f"[批量分析] 文字生成异常: {report_text}")
+            report_text = "报告生成失败，请重试。"
         
-        if workflow_type == "chatflow":
-            report_text = dify_data.get("answer", "") or dify_data.get("text", "")
-            conversation_id = dify_data.get("conversation_id")
-            if conversation_id:
-                sheet_report.dify_conversation_id = str(conversation_id)
+        # 确保 report_text 是字符串
+        if not isinstance(report_text, str):
+            logger.error(f"[批量分析] report_text 不是字符串，类型: {type(report_text)}, 值: {report_text}")
+            report_text = str(report_text) if report_text else "报告生成失败，请重试。"
+        
+        # 5. 合并报告
+        if isinstance(charts_result, dict) and charts_result.get("success"):
+            charts = charts_result.get("charts", []) if chart_generation_mode == "json" else []
+            html_charts = charts_result.get("html_content") if chart_generation_mode == "html" else None
+            data_summary = charts_result.get("data_summary", {})
         else:
-            workflow_output = dify_data.get("data", {}).get("outputs", {})
-            report_text = workflow_output.get("text", "") or dify_data.get("text", "")
+            charts = []
+            html_charts = None
+            data_summary = {}
+            logger.warning(f"[批量分析] 图表生成失败: {charts_result.get('error') if isinstance(charts_result, dict) else str(charts_result)}")
         
-        # 7. 解析echarts代码块
-        cleaned_text, charts = parse_echarts_from_text(report_text)
+        # 再次确保 report_text 是字符串
+        final_text = report_text if isinstance(report_text, str) else str(report_text) if report_text else "报告生成失败"
+        logger.info(f"[批量分析] 最终文字内容类型: {type(final_text)}, 长度: {len(final_text)}")
         
-        # 8. 构建报告内容
-        report_content = {
-            "text": cleaned_text,
-            "charts": charts,
-            "tables": [],
-            "metrics": {}
-        }
+        # 合并报告内容
+        report_content = report_merger.merge_report(
+            text_content=final_text,
+            charts=charts,
+            data_summary=data_summary,
+            html_charts=html_charts
+        )
         
-        # 如果清理后的文本是JSON格式，尝试解析
-        if cleaned_text and (cleaned_text.startswith("{") or cleaned_text.startswith("[")):
-            try:
-                parsed = json.loads(cleaned_text)
-                if isinstance(parsed, dict):
-                    parsed_charts = parsed.get("charts", [])
-                    if parsed_charts and not charts:
-                        report_content["charts"] = parsed_charts
-                    for key in ["tables", "metrics"]:
-                        if key in parsed:
-                            report_content[key] = parsed[key]
-            except:
-                pass
-        
-        # 9. 更新报告内容和状态为 completed
+        # 6. 更新报告内容和状态为 completed
         sheet_report.report_content = report_content
         sheet_report.report_status = "completed"
         db.commit()
         
-        logger.info(f"[批量分析] Sheet {sheet_name} 分析完成 - text_length={len(cleaned_text)}, charts_count={len(charts)}")
+        logger.info(f"[批量分析] Sheet {sheet_name} 分析完成 - text_length={len(final_text)}, html_charts_length={len(html_charts) if html_charts else 0}, charts_count={len(charts)}")
         return report_content
         
     except Exception as e:
@@ -226,7 +184,9 @@ async def process_all_sheets_concurrently(
     analysis_request: str,
     user_id: int,
     batch_session_id: int,
-    db: Session
+    db: Session,
+    chart_customization_prompt: Optional[str] = None,
+    chart_generation_mode: str = "html"
 ) -> List[dict]:
     """
     并发处理所有Sheet的分析任务（简化版，移除project_id参数）
@@ -241,11 +201,13 @@ async def process_all_sheets_concurrently(
             analysis_request=analysis_request,
             batch_session_id=batch_session_id,
             user_id=user_id,
-            db=db
+            db=db,
+            chart_customization_prompt=chart_customization_prompt,
+            chart_generation_mode=chart_generation_mode
         )
         tasks.append(task)
     
-    # 并发执行，但限制并发数（避免对Dify API造成压力）
+    # 并发执行，但限制并发数（避免对阿里百炼API造成压力）
     semaphore = asyncio.Semaphore(3)  # 最多3个并发
     
     async def bounded_task(task):

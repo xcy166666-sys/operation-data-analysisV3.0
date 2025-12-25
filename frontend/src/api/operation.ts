@@ -9,6 +9,15 @@ export interface Session {
   updated_at: string
   file_name?: string
   report_id?: number
+  messages?: Array<{
+    role: string
+    content?: string
+    timestamp?: string
+    file_name?: string
+    charts?: any[]
+    html_charts?: string  // 新增：HTML图表内容
+    tables?: any[]
+  }>
 }
 
 export interface UploadResponse {
@@ -25,6 +34,7 @@ export interface ReportContent {
     data: any
     config?: any
   }>
+  html_charts?: string  // 新增：HTML图表内容
   tables?: Array<{
     columns: Array<{ prop: string; label: string }>
     data: any[]
@@ -35,6 +45,25 @@ export interface ReportContent {
 export interface ReportResponse {
   report_id: number
   content: ReportContent
+}
+
+// 会话版本
+export interface SessionVersionMeta {
+  id: number
+  version_no: number
+  summary?: string
+  created_at: string
+  is_current: boolean
+}
+
+export interface SessionVersionDetail {
+  id: number
+  version_no: number
+  summary?: string
+  report_text?: string
+  report_html_charts?: string
+  report_charts_json?: any
+  created_at: string
 }
 
 // ==================== 批量分析相关接口 ====================
@@ -136,6 +165,31 @@ export function deleteSession(sessionId: number) {
   }>>(`/operation/sessions/${sessionId}`)
 }
 
+// ==================== 会话版本相关 ====================
+export function getSessionVersions(sessionId: number) {
+  return request.get<ApiResponse<SessionVersionMeta[]>>(
+    `/operation/sessions/${sessionId}/versions`
+  )
+}
+
+export function getSessionVersionDetail(sessionId: number, versionId: number) {
+  return request.get<ApiResponse<SessionVersionDetail>>(
+    `/operation/sessions/${sessionId}/versions/${versionId}`
+  )
+}
+
+export function createSessionVersion(sessionId: number, payload: {
+  summary?: string
+  report_text?: string
+  report_html_charts?: string
+  report_charts_json?: any
+}) {
+  return request.post<ApiResponse<SessionVersionDetail>>(
+    `/operation/sessions/${sessionId}/versions`,
+    payload
+  )
+}
+
 /**
  * 上传Excel文件（简化版，移除project_id参数）
  */
@@ -151,7 +205,7 @@ export function uploadExcel(file: File, sessionId: number, onProgress?: (progres
       headers: {
         'Content-Type': 'multipart/form-data'
       },
-      onUploadProgress: (progressEvent) => {
+      onUploadProgress: (progressEvent: any) => {
         if (onProgress && progressEvent.total) {
           const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
           onProgress(percent)
@@ -168,11 +222,19 @@ export function generateReport(data: {
   session_id: number
   file_id: number
   analysis_request: string
+  chart_customization_prompt?: string  // 新增：图表定制prompt
+  chart_generation_mode?: string  // 新增：图表生成模式 "html" 或 "json"
 }) {
   const formData = new FormData()
   formData.append('session_id', data.session_id.toString())
   formData.append('file_id', data.file_id.toString())
   formData.append('analysis_request', data.analysis_request)
+  if (data.chart_customization_prompt) {
+    formData.append('chart_customization_prompt', data.chart_customization_prompt)
+  }
+  if (data.chart_generation_mode) {
+    formData.append('chart_generation_mode', data.chart_generation_mode)
+  }
   
   return request.post<ApiResponse<ReportResponse>>(
     '/operation/generate',
@@ -272,7 +334,7 @@ export function uploadBatchExcel(
       headers: {
         'Content-Type': 'multipart/form-data'
       },
-      onUploadProgress: (progressEvent) => {
+      onUploadProgress: (progressEvent: any) => {
         if (onProgress && progressEvent.total) {
           const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
           onProgress(percent)
@@ -285,10 +347,19 @@ export function uploadBatchExcel(
 /**
  * 开始批量分析（简化版，移除project_id参数）
  */
-export function startBatchAnalysis(batchSessionId: number, analysisRequest: string) {
+export function startBatchAnalysis(
+  batchSessionId: number, 
+  analysisRequest: string,
+  chartCustomizationPrompt?: string,
+  chartGenerationMode: string = "html"
+) {
   const formData = new FormData()
   formData.append('batch_session_id', batchSessionId.toString())
   formData.append('analysis_request', analysisRequest)
+  formData.append('chart_generation_mode', chartGenerationMode)
+  if (chartCustomizationPrompt) {
+    formData.append('chart_customization_prompt', chartCustomizationPrompt)
+  }
   
   return request.post<ApiResponse<{
     batch_session_id: number
@@ -409,7 +480,7 @@ export function uploadCustomBatchExcel(
       headers: {
         'Content-Type': 'multipart/form-data'
       },
-      onUploadProgress: (progressEvent) => {
+      onUploadProgress: (progressEvent: any) => {
         if (onProgress && progressEvent.total) {
           const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
           onProgress(percent)
@@ -521,6 +592,89 @@ export function downloadCustomBatchReportPDF(
     },
     {
       responseType: 'blob'
+    }
+  )
+}
+
+// ==================== AI对话相关接口 ====================
+
+export interface DialogMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
+  modified_charts?: any[]
+  isError?: boolean
+}
+
+export interface DialogResponse {
+  response: string
+  modified_charts: any[]
+  conversation_id: string
+  action_type: 'chat' | 'modify_chart' | 'analysis' | 'error'
+}
+
+export interface DialogHistoryResponse {
+  messages: DialogMessage[]
+  conversation_id?: string
+  file_id?: string
+}
+
+/**
+ * 发送对话消息
+ */
+export function sendDialogMessage(data: {
+  session_id: number
+  user_message: string
+  current_charts?: any[]
+  conversation_id?: string
+}) {
+  const formData = new FormData()
+  formData.append('session_id', data.session_id.toString())
+  formData.append('user_message', data.user_message)
+  formData.append('current_charts', JSON.stringify(data.current_charts || []))
+  if (data.conversation_id) {
+    formData.append('conversation_id', data.conversation_id)
+  }
+
+  return request.post<ApiResponse<DialogResponse>>(
+    '/operation/dialog',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    }
+  )
+}
+
+/**
+ * 获取对话历史
+ */
+export function getDialogHistory(sessionId: number, limit: number = 50) {
+  return request.get<ApiResponse<DialogHistoryResponse>>(
+    '/operation/dialog/history',
+    {
+      params: {
+        session_id: sessionId,
+        limit
+      }
+    }
+  )
+}
+
+/**
+ * 清除对话历史
+ */
+export function clearDialogHistory(sessionId: number) {
+  return request.delete<ApiResponse<{
+    cleared_session_id: number
+  }>>(
+    '/operation/dialog/history',
+    {
+      params: {
+        session_id: sessionId
+      }
     }
   )
 }

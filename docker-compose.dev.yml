@@ -20,5 +20,5 @@ services:
       - /app/node_modules
     command: npm run dev
     ports:
-      - "5173:5173"
+      - "20801:5173"  # 前端开发端口：20000~20999区间后半段（主机端口:容器端口）
 

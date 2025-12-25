@@ -4,19 +4,19 @@ services:
   # PostgreSQL数据库
   postgres:
     image: postgres:15-alpine
-    container_name: operation-analysis-postgres
+    container_name: operation-analysis-v2-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-operation_analysis}
+      POSTGRES_DB: ${POSTGRES_DB:-operation_analysis_v2}
       POSTGRES_INITDB_ARGS: "-E UTF8"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_v2:/var/lib/postgresql/data
     ports:
-      - "5433:5432"  # 开发环境暴露端口，生产环境可注释（改为5433避免冲突）
+      - "22810:5432"  # V2.0端口：22810（V1.0使用22800）
     networks:
-      - app-network
+      - app-network-v2
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -26,15 +26,15 @@ services:
   # Redis缓存
   redis:
     image: redis:7-alpine
-    container_name: operation-analysis-redis
+    container_name: operation-analysis-v2-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
-      - redis_data:/data
+      - redis_data_v2:/data
     ports:
-      - "6380:6379"  # 开发环境暴露端口，生产环境可注释（改为6380避免冲突）
+      - "22811:6379"  # V2.0端口：22811（V1.0使用22801）
     networks:
-      - app-network
+      - app-network-v2
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -46,74 +46,84 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: operation-analysis-backend
+    container_name: operation-analysis-v2-backend
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-operation_analysis}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-operation_analysis_v2}
       - REDIS_URL=redis://redis:6379/0
+      # - HTTP_PROXY=http://host.docker.internal:7890
+      # - HTTPS_PROXY=http://host.docker.internal:7890
+      - NO_PROXY=localhost,127.0.0.1,postgres,redis
+    dns:
+      - 8.8.8.8
+      - 223.5.5.5
+      - 114.114.114.114
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
-      - backend_uploads:/app/uploads
-      - backend_logs:/var/log/operation-analysis
+      - backend_uploads_v2:/app/uploads
+      - backend_logs_v2:/var/log/operation-analysis
     ports:
-      - "8000:8000"
+      - "21810:8000"  # V2.0后端端口：21810（V1.0使用21800）
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - app-network
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      - app-network-v2
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload  # 容器内部仍使用8000
 
-  # Vue前端
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: operation-analysis-frontend
-    restart: unless-stopped
-    ports:
-      - "5173:80"
-    depends_on:
-      - backend
-    networks:
-      - app-network
+  # Vue前端（已改为本地运行，不再使用Docker）
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: operation-analysis-v2-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "20810:80"  # V2.0前端端口：20810（V1.0使用20800）
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - app-network-v2
 
   # Nginx反向代理（可选，用于生产环境）
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: operation-analysis-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - backend
-      - frontend
-    networks:
-      - app-network
+  # 注意：如果前端本地运行，nginx可能不需要，或者需要修改配置
+  # nginx:
+  #   build:
+  #     context: ./nginx
+  #     dockerfile: Dockerfile
+  #   container_name: operation-analysis-v2-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:80"  # V2.0 Nginx端口：8080（V1.0使用80）
+  #     - "8443:443"  # V2.0 Nginx HTTPS端口：8443（V1.0使用443）
+  #   volumes:
+  #     - ./nginx/conf.d:/etc/nginx/conf.d:ro
+  #     - nginx_logs_v2:/var/log/nginx
+  #   depends_on:
+  #     - backend
+  #     - frontend
+  #   networks:
+  #     - app-network-v2
 
 volumes:
-  postgres_data:
+  postgres_data_v2:
     driver: local
-  redis_data:
+  redis_data_v2:
     driver: local
-  backend_uploads:
+  backend_uploads_v2:
     driver: local
-  backend_logs:
+  backend_logs_v2:
     driver: local
-  nginx_logs:
+  nginx_logs_v2:
     driver: local
 
 networks:
-  app-network:
+  app-network-v2:
     driver: bridge
 

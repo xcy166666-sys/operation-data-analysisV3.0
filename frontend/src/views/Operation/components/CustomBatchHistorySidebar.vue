@@ -51,7 +51,7 @@
             </el-tag>
           </div>
           <div class="session-extra">
-            <span class="sheet-count">{{ session.sheet_count }} 个Sheet</span>
+            <span class="sheet-count">{{ session.sheet_count || 0 }} 个Sheet</span>
           </div>
         </div>
         <div class="session-actions" @click.stop>
@@ -81,6 +81,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ChatDotRound, Plus, Search, DocumentCopy, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { BatchSession } from '@/api/operation'
+import type { ApiResponse } from '@/types'
 import { getCustomBatchSessions, deleteCustomBatchSession, createCustomBatchSession } from '@/api/operation'
 import { useOperationStore } from '@/stores/operation'
 
@@ -94,7 +95,7 @@ const searchKeyword = ref('')
 const loading = ref(false)
 const sessions = ref<BatchSession[]>([])
 
-const currentSessionId = computed(() => operationStore.batchSessionId)
+const currentSessionId = computed(() => operationStore.customBatchSessionId)
 
 const filteredSessions = computed(() => {
   if (!searchKeyword.value.trim()) {
@@ -146,6 +147,7 @@ const getStatusType = (status: string) => {
 
 const getStatusText = (status: string) => {
   const textMap: Record<string, string> = {
+    draft: '草稿',
     completed: '已完成',
     processing: '处理中',
     failed: '失败',
@@ -155,7 +157,7 @@ const getStatusText = (status: string) => {
 }
 
 const handleLoadSession = (sessionId: number) => {
-  operationStore.setBatchSession(sessionId)
+  operationStore.setCustomBatchSession(sessionId)
   emit('session-selected', sessionId)
 }
 
@@ -163,26 +165,32 @@ const handleCreateNew = async () => {
   try {
     loading.value = true
     const response = await createCustomBatchSession()
-    if (response.success && response.data) {
-      const newSession = response.data
-      // 添加到列表顶部，立即显示
-      sessions.value.unshift(newSession)
+    const createResponse = response as unknown as ApiResponse<any>
+    if (createResponse.success && createResponse.data) {
+      const newSession = createResponse.data
       // 设置当前会话
-      operationStore.setBatchSession(newSession.id)
+      operationStore.setCustomBatchSession(newSession.id)
       // 触发事件通知父组件（这会重置上传界面）
       emit('create-new')
       ElMessage.success('新批量分析会话已创建')
       
-      // 异步刷新会话列表以确保数据同步
-      setTimeout(async () => {
-        try {
-          await loadSessions()
-        } catch (error) {
-          console.warn('刷新批量分析会话列表失败:', error)
-        }
-      }, 300)
+      // 立即添加到列表顶部显示（不等待API刷新）
+      // 因为后端API会过滤掉草稿会话，所以需要前端直接添加
+      // 检查是否已存在（避免重复添加）
+      const existingIndex = sessions.value.findIndex(s => s.id === newSession.id)
+      if (existingIndex === -1) {
+        sessions.value.unshift(newSession)
+      } else {
+        // 如果已存在，移到顶部
+        sessions.value.splice(existingIndex, 1)
+        sessions.value.unshift(newSession)
+      }
+      
+      // 不调用loadSessions，因为API会过滤掉草稿会话
+      // 用户上传文件后，会话状态会更新，那时再刷新列表
     } else {
-      ElMessage.error(response.message || '创建批量分析会话失败')
+      const createErrorResponse = response as unknown as ApiResponse<any>
+      ElMessage.error(createErrorResponse.message || '创建批量分析会话失败')
     }
   } catch (error: any) {
     console.error('创建批量分析会话失败:', error)
@@ -205,11 +213,12 @@ const handleDeleteSession = async (sessionId: number) => {
     )
     
     const response = await deleteCustomBatchSession(sessionId)
-    if (response.success) {
+    const deleteResponse = response as unknown as ApiResponse<any>
+    if (deleteResponse.success) {
       ElMessage.success('会话已删除')
       
       if (currentSessionId.value === sessionId) {
-        operationStore.setBatchSession(null)
+        operationStore.setCustomBatchSession(null)
       }
       
       await loadSessions()
@@ -226,8 +235,24 @@ const loadSessions = async () => {
   try {
     loading.value = true
     const response = await getCustomBatchSessions()
-    if (response.success && response.data) {
-      sessions.value = response.data.sessions || []
+    const batchResponse = response as unknown as ApiResponse<any>
+    if (batchResponse.success && batchResponse.data) {
+      const apiSessions = batchResponse.data.sessions || []
+      
+      // 合并API返回的会话和前端已有的草稿会话
+      // 保留前端添加的草稿会话（状态为draft且sheet_count为0的）
+      const draftSessions = sessions.value.filter(s => 
+        (s.status as any) === 'draft' && s.sheet_count === 0
+      )
+      
+      // 合并：草稿会话在前，API会话在后，去重
+      const allSessions = [...draftSessions, ...apiSessions]
+      const uniqueSessions = allSessions.filter((session, index, self) =>
+        index === self.findIndex(s => s.id === session.id)
+      )
+      
+      // 过滤掉状态为draft且sheet_count为0的会话（这些会话不应该显示在列表中）
+      sessions.value = uniqueSessions.filter(s => !((s.status as any) === 'draft' && s.sheet_count === 0))
     }
   } catch (error: any) {
     console.error('加载批量分析会话列表失败:', error)

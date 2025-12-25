@@ -45,6 +45,7 @@ class WorkflowBinding(Base):
     workflow_id = Column(Integer, ForeignKey('workflows.id', ondelete='CASCADE'), nullable=False)
     function_key = Column(String(50), nullable=False, default='operation_data_analysis')
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True)  # 用户ID，None表示全局配置
+    sheet_index = Column(Integer, nullable=True)  # Sheet索引（用于custom_operation_data_analysis，0-5对应6个工作流）
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -53,11 +54,13 @@ class WorkflowBinding(Base):
     user = relationship("User", foreign_keys=[user_id])
     
     # 唯一约束：每个用户每个功能键只能有一个工作流绑定
+    # 对于custom_operation_data_analysis，需要加上sheet_index唯一性
     __table_args__ = (
-        # 全局配置：user_id为None时，function_key必须唯一
-        # 用户配置：user_id不为None时，(user_id, function_key)必须唯一
+        # 全局配置：user_id为None时，function_key必须唯一（如果sheet_index为None）
+        # 对于custom_operation_data_analysis，需要(function_key, sheet_index)唯一
+        # 用户配置：user_id不为None时，(user_id, function_key, sheet_index)必须唯一
     )
     
     def __repr__(self):
-        return f"<WorkflowBinding(function_key='{self.function_key}', workflow_id={self.workflow_id}, user_id={self.user_id})>"
+        return f"<WorkflowBinding(function_key='{self.function_key}', workflow_id={self.workflow_id}, user_id={self.user_id}, sheet_index={self.sheet_index})>"
 

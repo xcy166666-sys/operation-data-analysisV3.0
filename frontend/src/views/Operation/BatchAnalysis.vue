@@ -36,12 +36,6 @@
           >
             定制化批量分析
           </el-button>
-          <el-button 
-            :icon="Setting"
-            circle
-            @click="openSettings"
-            title="配置工作流"
-          />
         </div>
       </div>
 
@@ -112,6 +106,31 @@
               例: {{ example }}
             </el-tag>
           </div>
+          
+          <!-- 图表定制 Prompt 输入区（可选） -->
+          <div class="chart-customization-section" style="margin-top: 20px;">
+            <div class="input-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="margin: 0; font-size: 14px;">图表定制 Prompt（可选）</h3>
+              <el-switch
+                v-model="enableChartCustomization"
+                size="small"
+              />
+            </div>
+            <el-input
+              v-if="enableChartCustomization"
+              v-model="chartCustomizationPrompt"
+              type="textarea"
+              :rows="4"
+              placeholder="请输入图表定制需求，例如：&#10;- 请生成折线图，展示新用户增长趋势&#10;- 使用蓝色主题，添加数据标签&#10;- 图表标题：新用户增长趋势分析"
+              :maxlength="500"
+              show-word-limit
+              style="margin-top: 10px;"
+            />
+            <div v-else class="hint-text" style="margin-top: 10px; padding: 10px; background: #f5f7fa; border-radius: 4px; color: #909399; font-size: 12px;">
+              💡 开启后可以定制图表样式和类型，例如指定图表类型、颜色主题、数据标签等
+            </div>
+          </div>
+          
           <div class="submit-section">
             <el-button 
               type="primary" 
@@ -140,7 +159,7 @@
           </template>
           <el-progress
             :percentage="batchProgress"
-            :status="batchStatus === 'completed' ? 'success' : undefined"
+            :status="(batchStatus as any) === 'completed' ? 'success' : undefined"
             :stroke-width="20"
           />
           <div class="progress-details" v-if="batchStatusData">
@@ -399,12 +418,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElUpload, type UploadFile } from 'element-plus'
 import {
   UploadFilled,
-  Setting,
   Check,
   DataAnalysis,
   Promotion,
@@ -421,9 +439,9 @@ import {
   getSheetReport,
   getBatchSessions
 } from '@/api/operation'
-import type { BatchSheet, SheetReportDetail } from '@/api/operation'
+import type { SheetReportDetail } from '@/api/operation'
+import type { ApiResponse } from '@/types'
 import { 
-  getAllFunctionWorkflows,
   getFunctionWorkflow,
   bindFunctionWorkflow,
   createWorkflow,
@@ -456,6 +474,8 @@ const uploadRef = ref<InstanceType<typeof ElUpload> | null>(null)
 const fileList = ref<UploadFile[]>([])
 const uploadProgress = ref(0)
 const analysisRequest = ref('生成数据分析报告，包含图表和关键指标')
+const enableChartCustomization = ref(false)
+const chartCustomizationPrompt = ref('')
 
 // 批量分析相关
 const batchSessionId = computed(() => operationStore.batchSessionId)
@@ -470,6 +490,22 @@ const isStarting = ref(false)
 const isLoadingReport = ref(false)
 const currentReportDetail = ref<SheetReportDetail | null>(null)
 const sidebarRef = ref<InstanceType<typeof BatchHistorySidebar> | null>(null)
+const showSettings = ref(false)
+const saving = ref(false)
+const settingsForm = ref({
+  platform: 'dify' as 'dify' | 'langchain' | 'ragflow',
+  name: '',
+  description: '',
+  config: {
+    api_key: '',
+    url_file: '',
+    url_work: '',
+    file_param: 'excell',
+    query_param: 'query',
+    kb_id: '',
+    chat_model: ''
+  } as any
+})
 
 // 轮询定时器
 let statusPollingTimer: number | null = null
@@ -501,6 +537,18 @@ const canStartAnalysis = computed(() => {
   return batchSessionId.value && analysisRequest.value.trim().length > 0
 })
 
+// 是否可以保存工作流配置
+const canSaveWorkflow = computed(() => {
+  return settingsForm.value.config.api_key.trim().length > 0 &&
+         settingsForm.value.config.url_file.trim().length > 0 &&
+         settingsForm.value.config.url_work.trim().length > 0
+})
+
+// 处理平台切换
+const handlePlatformChange = () => {
+  // 平台切换时的处理逻辑（如果需要）
+}
+
 // 方法
 const handleFileChange = async (file: UploadFile) => {
   if (!file.raw) return
@@ -524,8 +572,9 @@ const handleFileChange = async (file: UploadFile) => {
       }
     )
     
-    if (response.success && response.data) {
-      const data = response.data
+    const uploadResponse = response as unknown as ApiResponse<any>
+    if (uploadResponse.success && uploadResponse.data) {
+      const data = uploadResponse.data
       operationStore.setBatchSession(data.batch_session_id)
       operationStore.setBatchReports(data.sheets)
       uploadProgress.value = 100
@@ -538,7 +587,8 @@ const handleFileChange = async (file: UploadFile) => {
       // 文件上传成功后，状态回到idle，等待用户输入分析需求并点击"提交生成报告"按钮
       operationStore.setBatchStatus('idle')
     } else {
-      ElMessage.error(response.message || '文件上传失败')
+      const uploadResponse = response as unknown as ApiResponse<any>
+      ElMessage.error(uploadResponse.message || '文件上传失败')
       operationStore.setBatchStatus('idle')
       uploadProgress.value = 0
     }
@@ -592,6 +642,8 @@ const handleCreateNew = () => {
   fileList.value = []
   currentReportDetail.value = null
   analysisRequest.value = '生成数据分析报告，包含图表和关键指标'
+  enableChartCustomization.value = false
+  chartCustomizationPrompt.value = ''
   uploadRef.value?.clearFiles()
   
   // 确保显示上传界面
@@ -614,17 +666,21 @@ const startAnalysis = async () => {
   try {
     const response = await startBatchAnalysis(
       batchSessionId.value,
-      analysisRequest.value
+      analysisRequest.value,
+      enableChartCustomization.value ? chartCustomizationPrompt.value : undefined,
+      "html"  // 使用HTML模式
     )
     
-    if (response.success) {
+    const startResponse = response as unknown as ApiResponse<any>
+    if (startResponse.success) {
       operationStore.setBatchStatus('analyzing')
       ElMessage.success('批量分析已开始')
       
       // 开始轮询状态
       startStatusPolling()
     } else {
-      ElMessage.error(response.message || '启动批量分析失败')
+      const startResponse = response as unknown as ApiResponse<any>
+      ElMessage.error(startResponse.message || '启动批量分析失败')
     }
   } catch (error: any) {
     console.error('启动批量分析错误:', error)
@@ -645,13 +701,14 @@ const startStatusPolling = () => {
     
     try {
       const response = await getBatchAnalysisStatus(batchSessionId.value)
+      const pollingStatusResponse = response as unknown as ApiResponse<any>
       
-      if (response.success && response.data) {
-        const statusData = response.data
+      if (pollingStatusResponse.success && pollingStatusResponse.data) {
+        const statusData = pollingStatusResponse.data
         operationStore.setBatchStatusData(statusData)
         
         // 更新报告列表
-        const reports = statusData.reports.map(r => ({
+        const reports = (statusData.reports || []).map((r: any) => ({
           id: r.id,
           sheet_name: r.sheet_name,
           sheet_index: r.sheet_index,
@@ -709,8 +766,9 @@ const loadReportDetail = async (reportId: number) => {
   try {
     const response = await getSheetReport(reportId)
     
-    if (response.success && response.data) {
-      currentReportDetail.value = response.data
+    const reportResponse = response as unknown as ApiResponse<any>
+    if (reportResponse.success && reportResponse.data) {
+      currentReportDetail.value = reportResponse.data
     } else {
       ElMessage.error('加载报告详情失败')
     }
@@ -731,9 +789,10 @@ const loadBatchSession = async (sessionId: number) => {
   try {
     // 先尝试获取会话状态
     const response = await getBatchAnalysisStatus(sessionId)
+    const statusResponse = response as unknown as ApiResponse<any>
     
-    if (response.success && response.data) {
-      const statusData = response.data
+    if (statusResponse.success && statusResponse.data) {
+      const statusData = statusResponse.data
       operationStore.setBatchSession(sessionId)
       operationStore.setBatchStatusData(statusData)
       
@@ -751,7 +810,7 @@ const loadBatchSession = async (sessionId: number) => {
       }
       
       // 更新报告列表
-      const reports = statusData.reports.map(r => ({
+      const reports = (statusData.reports || []).map((r: any) => ({
         id: r.id,
         sheet_name: r.sheet_name,
         sheet_index: r.sheet_index,
@@ -798,44 +857,44 @@ const loadBatchSession = async (sessionId: number) => {
 }
 
 // 填充设置表单（用于编辑现有配置）
-const fillSettingsForm = () => {
-  if (currentWorkflow.value) {
-    // 已有配置，填充表单
-    const config = currentWorkflow.value.config || {}
-    settingsForm.value = {
-      platform: 'dify', // 固定为dify
-      name: currentWorkflow.value.name || '',
-      description: currentWorkflow.value.description || '',
-      config: {
-        api_key: config.api_key || '',
-        url_file: config.url_file || '',
-        url_work: config.url_work || '',
-        file_param: config.file_param || 'excell',
-        query_param: config.query_param || 'query'
-      }
-    }
-  } else {
-    // 没有配置，重置表单
-    settingsForm.value = {
-      platform: 'dify',
-      name: '',
-      description: '',
-      config: {
-        api_key: '',
-        url_file: '',
-        url_work: '',
-        file_param: 'excell',
-        query_param: 'query'
-      }
-    }
-  }
-}
+// const fillSettingsForm = () => {
+//   if (currentWorkflow.value) {
+//     // 已有配置，填充表单
+//     const config = currentWorkflow.value.config || {}
+//     settingsForm.value = {
+//       platform: 'dify', // 固定为dify
+//       name: currentWorkflow.value.name || '',
+//       description: currentWorkflow.value.description || '',
+//       config: {
+//         api_key: config.api_key || '',
+//         url_file: config.url_file || '',
+//         url_work: config.url_work || '',
+//         file_param: config.file_param || 'excell',
+//         query_param: config.query_param || 'query'
+//       }
+//     }
+//   } else {
+//     // 没有配置，重置表单
+//     settingsForm.value = {
+//       platform: 'dify',
+//       name: '',
+//       description: '',
+//       config: {
+//         api_key: '',
+//         url_file: '',
+//         url_work: '',
+//         file_param: 'excell',
+//         query_param: 'query'
+//       }
+//     }
+//   }
+// }
 
-const openSettings = () => {
-  // 所有用户都可以配置工作流
-  fillSettingsForm()
-  showSettings.value = true
-}
+// const openSettings = () => {
+//   // 所有用户都可以配置工作流
+//   fillSettingsForm()
+//   showSettings.value = true
+// }
 
 // 保存工作流配置（用户级配置）
 const saveWorkflowConfig = async () => {
@@ -869,7 +928,7 @@ const saveWorkflowConfig = async () => {
 
     if (currentWorkflow.value) {
       // 更新现有工作流
-      const updateRes = await updateWorkflow(currentWorkflow.value.id, workflowData)
+      const updateRes = await updateWorkflow(currentWorkflow.value.id, workflowData) as unknown as ApiResponse<any>
       
       if (!updateRes.success || !updateRes.data) {
         throw new Error('更新工作流失败')
@@ -879,7 +938,7 @@ const saveWorkflowConfig = async () => {
       ElMessage.success('工作流配置已更新')
     } else {
       // 创建新工作流
-      const createRes = await createWorkflow(workflowData)
+      const createRes = await createWorkflow(workflowData) as unknown as ApiResponse<any>
       
       if (!createRes.success || !createRes.data) {
         throw new Error('创建工作流失败')
@@ -912,7 +971,8 @@ const saveWorkflowConfig = async () => {
 const loadFunctionWorkflow = async () => {
   try {
     const res = await getFunctionWorkflow('operation_data_analysis', true)
-    if (res.success && res.data) {
+    const workflowRes = res as unknown as ApiResponse<any>
+    if (workflowRes.success && workflowRes.data) {
       currentWorkflow.value = res.data.workflow
     } else {
       currentWorkflow.value = null
@@ -929,16 +989,32 @@ const getProgressTagType = () => {
   return 'info'
 }
 
+
 // 生命周期
 onMounted(async () => {
+  // 检查路由参数，判断是否需要开始新会话
+  const route = useRoute()
+  const startNew = route.query.new === 'true'
+  
+  if (startNew) {
+    // 从首页点击进入，清空所有状态，开始全新分析
+    console.log('[BatchAnalysis] 开始新的批量分析会话')
+    batchSessionId.value = null
+    fileList.value = []
+    batchReports.value = []
+    batchStatus.value = 'idle'
+    analysisRequest.value = ''
+  }
+  
   // 加载工作流配置
   await loadFunctionWorkflow()
   
   // 加载历史批量会话列表
   try {
     const response = await getBatchSessions({ page: 1, page_size: 20 })
-    if (response.success && response.data) {
-      operationStore.setBatchSessions(response.data.sessions)
+    const batchResponse = response as unknown as ApiResponse<any>
+    if (batchResponse.success && batchResponse.data) {
+      operationStore.setBatchSessions(batchResponse.data.sessions)
     }
   } catch (error) {
     console.error('加载批量会话列表失败:', error)

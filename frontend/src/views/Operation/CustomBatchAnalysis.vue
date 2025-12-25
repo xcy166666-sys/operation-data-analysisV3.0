@@ -12,7 +12,7 @@
       <!-- 顶部：标题和上传按钮 -->
       <div class="content-header">
         <div class="header-text">
-          <h1>定制化批量数据分析</h1>
+          <h1>黄伟斌定制款数据分析工具</h1>
           <p>上传包含多个Sheet的Excel文件，系统将自动拆分并对每个Sheet生成分析报告</p>
         </div>
         <div class="header-actions">
@@ -36,29 +36,39 @@
           >
             批量分析
           </el-button>
-          <el-button 
-            :icon="Setting"
-            circle
-            @click="openSettings"
-            title="配置工作流"
-          />
         </div>
       </div>
 
-      <!-- 工作流状态提示 -->
-      <div class="workflow-status-bar" v-if="!currentWorkflow">
-        <el-alert
-          title="未配置工作流，请联系管理员"
-          type="warning"
-          :closable="false"
-          show-icon
-        />
-      </div>
-      <div class="workflow-status-bar" v-else>
+      <!-- API状态提示 -->
+      <div class="workflow-status-bar">
         <el-tag size="small" type="success">
           <el-icon><Check /></el-icon>
-          工作流: {{ currentWorkflow.name }}
+          API: 阿里百炼大模型（根据Sheet索引自动选择对应的Prompt模板）
         </el-tag>
+        <el-popover
+          placement="bottom"
+          width="500"
+          trigger="hover"
+        >
+          <template #reference>
+            <el-button text size="small" style="margin-left: 8px;">
+              <el-icon><InfoFilled /></el-icon>
+              查看Prompt配置
+            </el-button>
+          </template>
+          <div style="line-height: 1.8;">
+            <p style="margin: 0 0 8px 0; font-weight: 600;">定制化批量分析Prompt配置：</p>
+            <p style="margin: 4px 0;"><strong>Sheet 0 (最后操作分布):</strong> 分析流失用户离开前的最后游戏行为，就TOP10高频率行为</p>
+            <p style="margin: 4px 0;"><strong>Sheet 1 (新手漏斗):</strong> 分析新手前期环节的留存与转化表现，可以体现数据奇点</p>
+            <p style="margin: 4px 0;"><strong>Sheet 2 (回流用户):</strong> 分析回流用户的数量与留存质量变化</p>
+            <p style="margin: 4px 0;"><strong>Sheet 3 (流失用户属性):</strong> 分析与统计流失用户的VIP等级与流失等级分布</p>
+            <p style="margin: 4px 0;"><strong>Sheet 4 (留存率):</strong> 分析全新用户（new)与滚服新增用户(roll）的留存差异</p>
+            <p style="margin: 4px 0;"><strong>Sheet 5 (LTV):</strong> 分析全新用户（new)与滚服新增用户(roll）的LTV差异</p>
+            <p style="margin: 8px 0 0 0; font-size: 12px; color: #909399;">
+              所有Sheet使用相同的阿里百炼API，仅Prompt模板不同
+            </p>
+          </div>
+        </el-popover>
       </div>
 
       <!-- 上传和进度区域 -->
@@ -84,9 +94,64 @@
           </div>
         </el-upload>
 
-        <!-- 上传进度 -->
-        <div v-if="uploadProgress > 0 && uploadProgress < 100" class="upload-progress">
-          <el-progress :percentage="uploadProgress" :status="uploadProgress === 100 ? 'success' : undefined" />
+        <!-- 上传进度和状态提示 -->
+        <div v-if="batchStatus === 'uploading' || batchStatus === 'splitting'" class="upload-status-card">
+          <el-card shadow="hover" class="status-card">
+            <div class="status-content">
+              <div class="status-icon">
+                <el-icon v-if="batchStatus === 'uploading'" class="rotating">
+                  <UploadFilled />
+                </el-icon>
+                <el-icon v-else-if="batchStatus === 'splitting'" class="rotating">
+                  <Loading />
+                </el-icon>
+              </div>
+              <div class="status-text">
+                <h3 v-if="batchStatus === 'uploading'">正在上传文件...</h3>
+                <h3 v-else-if="batchStatus === 'splitting'">正在拆分Excel文件...</h3>
+                <p v-if="batchStatus === 'uploading'">请稍候，文件正在上传到服务器</p>
+                <p v-else-if="batchStatus === 'splitting'">系统正在将Excel文件拆分为多个Sheet</p>
+              </div>
+            </div>
+            <el-progress 
+              v-if="batchStatus === 'uploading'"
+              :percentage="uploadProgress" 
+              :status="uploadProgress === 100 ? 'success' : undefined"
+              :stroke-width="8"
+              class="status-progress"
+            />
+            <div v-else-if="batchStatus === 'splitting'" class="splitting-indicator">
+              <el-icon class="rotating"><Loading /></el-icon>
+              <span>正在处理中...</span>
+            </div>
+          </el-card>
+        </div>
+        
+        <!-- 上传成功提示（一直显示，只要batchSessionId存在就显示） -->
+        <div v-if="batchSessionId" class="upload-success-card">
+          <el-alert
+            type="success"
+            :closable="false"
+            show-icon
+            class="success-alert"
+          >
+            <template #title>
+              <div class="success-content">
+                <div class="success-icon">
+                  <el-icon><CircleCheckFilled /></el-icon>
+                </div>
+                <div class="success-text">
+                  <h3>文件上传成功！</h3>
+                  <p>
+                    已成功拆分为 <strong>{{ batchReports.length || batchStatusData?.total_sheets || 0 }}</strong> 个Sheet
+                    <template v-if="batchStatus === 'idle'">，请在下方的输入框中输入分析需求，然后点击"提交生成报告"按钮开始分析。</template>
+                    <template v-else-if="(batchStatus as any) === 'analyzing'">，正在分析中...</template>
+                    <template v-else-if="(batchStatus as any) === 'completed'">，分析已完成！</template>
+                  </p>
+                </div>
+              </div>
+            </template>
+          </el-alert>
         </div>
 
         <!-- 分析需求输入区 -->
@@ -112,6 +177,31 @@
               例: {{ example }}
             </el-tag>
           </div>
+          
+          <!-- 图表定制 Prompt 输入区（可选） -->
+          <div class="chart-customization-section" style="margin-top: 20px;">
+            <div class="input-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="margin: 0; font-size: 14px;">图表定制 Prompt（可选）</h3>
+              <el-switch
+                v-model="enableChartCustomization"
+                size="small"
+              />
+            </div>
+            <el-input
+              v-if="enableChartCustomization"
+              v-model="chartCustomizationPrompt"
+              type="textarea"
+              :rows="4"
+              placeholder="请输入图表定制需求，例如：&#10;- 请生成折线图，展示新用户增长趋势&#10;- 使用蓝色主题，添加数据标签&#10;- 图表标题：新用户增长趋势分析"
+              :maxlength="500"
+              show-word-limit
+              style="margin-top: 10px;"
+            />
+            <div v-else class="hint-text" style="margin-top: 10px; padding: 10px; background: #f5f7fa; border-radius: 4px; color: #909399; font-size: 12px;">
+              💡 开启后可以定制图表样式和类型，例如指定图表类型、颜色主题、数据标签等
+            </div>
+          </div>
+          
           <div class="input-tip">
             <el-alert
               type="info"
@@ -151,7 +241,7 @@
           </template>
           <el-progress
             :percentage="batchProgress"
-            :status="batchStatus === 'completed' ? 'success' : undefined"
+            :status="(batchStatus as string) === 'completed' ? 'success' : undefined"
             :stroke-width="20"
           />
           <div class="progress-details" v-if="batchStatusData">
@@ -411,16 +501,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElUpload, type UploadFile } from 'element-plus'
 import {
   UploadFilled,
-  Setting,
   Check,
   DataAnalysis,
   Promotion,
-  ArrowLeft
+  ArrowLeft,
+  InfoFilled,
+  Loading,
+  CircleCheckFilled
 } from '@element-plus/icons-vue'
 import { useOperationStore } from '@/stores/operation'
 import CustomBatchHistorySidebar from './components/CustomBatchHistorySidebar.vue'
@@ -433,9 +525,9 @@ import {
   getCustomSheetReport,
   getCustomBatchSessions
 } from '@/api/operation'
-import type { BatchSheet, SheetReportDetail } from '@/api/operation'
+import type { SheetReportDetail } from '@/api/operation'
+import type { ApiResponse } from '@/types'
 import { 
-  getAllFunctionWorkflows,
   getFunctionWorkflow,
   bindFunctionWorkflow,
   createWorkflow,
@@ -469,19 +561,39 @@ const fileList = ref<UploadFile[]>([])
 const uploadProgress = ref(0)
 const analysisRequest = ref('生成数据分析报告，包含图表和关键指标')
 
-// 批量分析相关
-const batchSessionId = computed(() => operationStore.batchSessionId)
-const batchReports = computed(() => operationStore.batchReports)
-const currentReportIndex = computed(() => operationStore.currentReportIndex)
-const batchStatus = computed(() => operationStore.batchStatus)
-const batchStatusData = computed(() => operationStore.batchStatusData)
-const batchProgress = computed(() => operationStore.batchProgress)
+// 图表定制相关
+const enableChartCustomization = ref(false)
+const chartCustomizationPrompt = ref('')
+
+// 定制化批量分析相关（独立状态）
+const batchSessionId = computed(() => operationStore.customBatchSessionId)
+const batchReports = computed(() => operationStore.customBatchReports)
+const currentReportIndex = computed(() => operationStore.customCurrentReportIndex)
+const batchStatus = computed(() => operationStore.customBatchStatus)
+const batchStatusData = computed(() => operationStore.customBatchStatusData)
+const batchProgress = computed(() => operationStore.customBatchProgress)
 
 // 其他状态
 const isStarting = ref(false)
 const isLoadingReport = ref(false)
 const currentReportDetail = ref<SheetReportDetail | null>(null)
 const sidebarRef = ref<InstanceType<typeof CustomBatchHistorySidebar> | null>(null)
+const showSettings = ref(false)
+const saving = ref(false)
+const settingsForm = ref({
+  platform: 'dify' as 'dify' | 'langchain' | 'ragflow',
+  name: '',
+  description: '',
+  config: {
+    api_key: '',
+    url_file: '',
+    url_work: '',
+    file_param: 'excell',
+    query_param: 'query',
+    kb_id: '',
+    chat_model: ''
+  } as any
+})
 
 // 轮询定时器
 let statusPollingTimer: number | null = null
@@ -508,6 +620,18 @@ const useExample = (example: string) => {
   analysisRequest.value = example
 }
 
+// 是否可以保存工作流配置
+const canSaveWorkflow = computed(() => {
+  return settingsForm.value.config.api_key.trim().length > 0 &&
+         settingsForm.value.config.url_file.trim().length > 0 &&
+         settingsForm.value.config.url_work.trim().length > 0
+})
+
+// 处理平台切换
+const handlePlatformChange = () => {
+  // 平台切换时的处理逻辑（如果需要）
+}
+
 // 是否可以开始分析
 const canStartAnalysis = computed(() => {
   return batchSessionId.value && analysisRequest.value.trim().length > 0
@@ -524,7 +648,7 @@ const handleFileChange = async (file: UploadFile) => {
   }
   
   try {
-    operationStore.setBatchStatus('uploading')
+    operationStore.setCustomBatchStatus('uploading')
     uploadProgress.value = 0
     ElMessage.info('正在上传文件...')
     
@@ -533,32 +657,41 @@ const handleFileChange = async (file: UploadFile) => {
       analysisRequest.value,
       (progress) => {
         uploadProgress.value = progress
+        console.log(`[定制化批量分析] 上传进度: ${progress}%`)
       }
     )
     
-    if (response.success && response.data) {
+    console.log('[定制化批量分析] 上传响应:', response)
+    
+    const statusResponse = response as unknown as ApiResponse<any>
+    if (statusResponse.success && statusResponse.data) {
       const data = response.data
-      operationStore.setBatchSession(data.batch_session_id)
-      operationStore.setBatchReports(data.sheets)
+      console.log('[定制化批量分析] 上传成功，数据:', data)
+      
+      operationStore.setCustomBatchSession(data.batch_session_id)
+      operationStore.setCustomBatchReports(data.sheets)
       uploadProgress.value = 100
       
       ElMessage.success(`文件上传成功，已拆分为 ${data.sheet_count} 个Sheet，请输入分析需求并点击"提交生成报告"`)
       
-      // 刷新批量分析会话列表
-      sidebarRef.value?.loadSessions()
-      
       // 文件上传成功后，状态回到idle，等待用户输入分析需求并点击"提交生成报告"按钮
-      operationStore.setBatchStatus('idle')
+      operationStore.setCustomBatchStatus('idle')
+      
+      // 不自动刷新历史列表，避免显示未完成的会话
+      // 用户可以在需要时手动刷新或等待分析完成后再查看历史
+      console.log('[定制化批量分析] 状态已设置为idle')
     } else {
-      ElMessage.error(response.message || '文件上传失败')
-      operationStore.setBatchStatus('idle')
+      const uploadResponse = response as unknown as ApiResponse<any>
+      console.error('[定制化批量分析] 上传失败:', uploadResponse)
+      ElMessage.error(uploadResponse.message || '文件上传失败')
+      operationStore.setCustomBatchStatus('idle')
       uploadProgress.value = 0
     }
   } catch (error: any) {
     console.error('文件上传错误:', error)
     const errorMsg = error.response?.data?.error?.message || error.message || '文件上传失败'
     ElMessage.error(errorMsg)
-    operationStore.setBatchStatus('idle')
+    operationStore.setCustomBatchStatus('idle')
     uploadProgress.value = 0
     uploadRef.value?.clearFiles()
   }
@@ -583,7 +716,7 @@ const validateFile = (file: File): boolean => {
 }
 
 const handleFileRemove = () => {
-  operationStore.resetBatch()
+  operationStore.resetCustomBatch()
   uploadProgress.value = 0
   fileList.value = []
   currentReportDetail.value = null
@@ -593,21 +726,23 @@ const handleUploadError = (error: Error, file: UploadFile) => {
   console.error('文件上传错误:', error, file)
   ElMessage.error(`文件上传失败: ${error.message || '未知错误'}`)
   uploadRef.value?.clearFiles()
-  operationStore.setBatchStatus('idle')
+  operationStore.setCustomBatchStatus('idle')
   uploadProgress.value = 0
 }
 
 const handleCreateNew = () => {
   // 重置所有状态
-  operationStore.resetBatch()
+  operationStore.resetCustomBatch()
   uploadProgress.value = 0
   fileList.value = []
   currentReportDetail.value = null
   analysisRequest.value = '生成数据分析报告，包含图表和关键指标'
+  enableChartCustomization.value = false
+  chartCustomizationPrompt.value = ''
   uploadRef.value?.clearFiles()
   
   // 确保显示上传界面
-  operationStore.setBatchStatus('idle')
+  operationStore.setCustomBatchStatus('idle')
 }
 
 const startAnalysis = async () => {
@@ -629,14 +764,16 @@ const startAnalysis = async () => {
       analysisRequest.value
     )
     
-    if (response.success) {
-      operationStore.setBatchStatus('analyzing')
+    const startResponse = response as unknown as ApiResponse<any>
+    if (startResponse.success) {
+      operationStore.setCustomBatchStatus('analyzing')
       ElMessage.success('批量分析已开始')
       
       // 开始轮询状态
       startStatusPolling()
     } else {
-      ElMessage.error(response.message || '启动批量分析失败')
+      const startResponse = response as unknown as ApiResponse<any>
+      ElMessage.error(startResponse.message || '启动批量分析失败')
     }
   } catch (error: any) {
     console.error('启动批量分析错误:', error)
@@ -658,23 +795,24 @@ const startStatusPolling = () => {
     try {
       const response = await getCustomBatchAnalysisStatus(batchSessionId.value)
       
-      if (response.success && response.data) {
+      const statusResponse = response as unknown as ApiResponse<any>
+    if (statusResponse.success && statusResponse.data) {
         const statusData = response.data
-        operationStore.setBatchStatusData(statusData)
+        operationStore.setCustomBatchStatusData(statusData)
         
         // 更新报告列表
-        const reports = statusData.reports.map(r => ({
+        const reports = (statusData.reports || []).map((r: any) => ({
           id: r.id,
           sheet_name: r.sheet_name,
           sheet_index: r.sheet_index,
           split_file_path: '',
           report_status: r.report_status as any
         }))
-        operationStore.setBatchReports(reports)
+        operationStore.setCustomBatchReports(reports)
         
         // 更新批量状态
         if (statusData.status === 'completed' || statusData.status === 'partial_failed') {
-          operationStore.setBatchStatus('completed')
+          operationStore.setCustomBatchStatus('completed')
           stopStatusPolling()
           
           // 如果当前选中的报告已完成，加载报告详情
@@ -685,7 +823,7 @@ const startStatusPolling = () => {
             }
           }
         } else if (statusData.status === 'failed') {
-          operationStore.setBatchStatus('failed')
+          operationStore.setCustomBatchStatus('failed')
           stopStatusPolling()
         }
       }
@@ -703,7 +841,7 @@ const stopStatusPolling = () => {
 }
 
 const handleTabChange = async (index: number) => {
-  operationStore.setCurrentReportIndex(index)
+  operationStore.setCustomCurrentReportIndex(index)
   
   if (index >= 0 && index < batchReports.value.length) {
     const report = batchReports.value[index]
@@ -721,7 +859,8 @@ const loadReportDetail = async (reportId: number) => {
   try {
     const response = await getCustomSheetReport(reportId)
     
-    if (response.success && response.data) {
+    const statusResponse = response as unknown as ApiResponse<any>
+    if (statusResponse.success && statusResponse.data) {
       currentReportDetail.value = response.data
     } else {
       ElMessage.error('加载报告详情失败')
@@ -744,14 +883,15 @@ const loadBatchSession = async (sessionId: number) => {
     // 先尝试获取会话状态
     const response = await getCustomBatchAnalysisStatus(sessionId)
     
-    if (response.success && response.data) {
+    const statusResponse = response as unknown as ApiResponse<any>
+    if (statusResponse.success && statusResponse.data) {
       const statusData = response.data
-      operationStore.setBatchSession(sessionId)
+      operationStore.setCustomBatchSession(sessionId)
       operationStore.setBatchStatusData(statusData)
       
       // 如果是draft状态（新建的会话），重置为空白状态
       if (statusData.status === 'draft') {
-        operationStore.setBatchStatus('idle')
+        operationStore.setCustomBatchStatus('idle')
         operationStore.setBatchReports([])
         operationStore.setCurrentReportIndex(0)
         currentReportDetail.value = null
@@ -763,7 +903,7 @@ const loadBatchSession = async (sessionId: number) => {
       }
       
       // 更新报告列表
-      const reports = statusData.reports.map(r => ({
+      const reports = (statusData.reports || []).map((r: any) => ({
         id: r.id,
         sheet_name: r.sheet_name,
         sheet_index: r.sheet_index,
@@ -774,7 +914,7 @@ const loadBatchSession = async (sessionId: number) => {
       
       // 设置状态
       if (statusData.status === 'processing') {
-        operationStore.setBatchStatus('analyzing')
+        operationStore.setCustomBatchStatus('analyzing')
         startStatusPolling()
       } else if (statusData.status === 'completed' || statusData.status === 'partial_failed') {
         operationStore.setBatchStatus('completed')
@@ -793,8 +933,8 @@ const loadBatchSession = async (sessionId: number) => {
   } catch (error: any) {
     // 如果是404错误，可能是draft状态的会话，重置为空白状态
     if (error.response?.status === 404) {
-      operationStore.setBatchSession(sessionId)
-      operationStore.setBatchStatus('idle')
+      operationStore.setCustomBatchSession(sessionId)
+      operationStore.setCustomBatchStatus('idle')
       operationStore.setBatchReports([])
       operationStore.setCurrentReportIndex(0)
       currentReportDetail.value = null
@@ -810,44 +950,44 @@ const loadBatchSession = async (sessionId: number) => {
 }
 
 // 填充设置表单（用于编辑现有配置）
-const fillSettingsForm = () => {
-  if (currentWorkflow.value) {
-    // 已有配置，填充表单
-    const config = currentWorkflow.value.config || {}
-    settingsForm.value = {
-      platform: 'dify', // 固定为dify
-      name: currentWorkflow.value.name || '',
-      description: currentWorkflow.value.description || '',
-      config: {
-        api_key: config.api_key || '',
-        url_file: config.url_file || '',
-        url_work: config.url_work || '',
-        file_param: config.file_param || 'excell',
-        query_param: config.query_param || 'query'
-      }
-    }
-  } else {
-    // 没有配置，重置表单
-    settingsForm.value = {
-      platform: 'dify',
-      name: '',
-      description: '',
-      config: {
-        api_key: '',
-        url_file: '',
-        url_work: '',
-        file_param: 'excell',
-        query_param: 'query'
-      }
-    }
-  }
-}
+// const fillSettingsForm = () => {
+//   if (currentWorkflow.value) {
+//     // 已有配置，填充表单
+//     const config = currentWorkflow.value.config || {}
+//     settingsForm.value = {
+//       platform: 'dify', // 固定为dify
+//       name: currentWorkflow.value.name || '',
+//       description: currentWorkflow.value.description || '',
+//       config: {
+//         api_key: config.api_key || '',
+//         url_file: config.url_file || '',
+//         url_work: config.url_work || '',
+//         file_param: config.file_param || 'excell',
+//         query_param: config.query_param || 'query'
+//       }
+//     }
+//   } else {
+//     // 没有配置，重置表单
+//     settingsForm.value = {
+//       platform: 'dify',
+//       name: '',
+//       description: '',
+//       config: {
+//         api_key: '',
+//         url_file: '',
+//         url_work: '',
+//         file_param: 'excell',
+//         query_param: 'query'
+//       }
+//     }
+//   }
+// }
 
-const openSettings = () => {
-  // 所有用户都可以配置工作流
-  fillSettingsForm()
-  showSettings.value = true
-}
+// const openSettings = () => {
+//   // 所有用户都可以配置工作流
+//   fillSettingsForm()
+//   showSettings.value = true
+// }
 
 // 保存工作流配置（用户级配置）
 const saveWorkflowConfig = async () => {
@@ -881,7 +1021,7 @@ const saveWorkflowConfig = async () => {
 
     if (currentWorkflow.value) {
       // 更新现有工作流
-      const updateRes = await updateWorkflow(currentWorkflow.value.id, workflowData)
+      const updateRes = await updateWorkflow(currentWorkflow.value.id, workflowData) as unknown as ApiResponse<any>
       
       if (!updateRes.success || !updateRes.data) {
         throw new Error('更新工作流失败')
@@ -891,7 +1031,7 @@ const saveWorkflowConfig = async () => {
       ElMessage.success('工作流配置已更新')
     } else {
       // 创建新工作流
-      const createRes = await createWorkflow(workflowData)
+      const createRes = await createWorkflow(workflowData) as unknown as ApiResponse<any>
       
       if (!createRes.success || !createRes.data) {
         throw new Error('创建工作流失败')
@@ -924,12 +1064,13 @@ const saveWorkflowConfig = async () => {
 const loadFunctionWorkflow = async () => {
   try {
     // 先尝试加载定制化批量分析的工作流
-    let res = await getFunctionWorkflow('custom_operation_data_analysis', true)
+    let res = await getFunctionWorkflow('custom_operation_data_analysis', true) as unknown as ApiResponse<any>
     // 如果没有定制化工作流，回退到普通工作流
     if (!res.success || !res.data) {
-      res = await getFunctionWorkflow('operation_data_analysis', true)
+      res = await getFunctionWorkflow('operation_data_analysis', true) as unknown as ApiResponse<any>
     }
-    if (res.success && res.data) {
+    const workflowRes = res as unknown as ApiResponse<any>
+    if (workflowRes.success && workflowRes.data) {
       currentWorkflow.value = res.data.workflow
     } else {
       currentWorkflow.value = null
@@ -948,14 +1089,29 @@ const getProgressTagType = () => {
 
 // 生命周期
 onMounted(async () => {
+  // 检查路由参数，判断是否需要开始新会话
+  const route = useRoute()
+  const startNew = route.query.new === 'true'
+  
+  if (startNew) {
+    // 从首页点击进入，清空所有状态，开始全新分析
+    console.log('[CustomBatchAnalysis] 开始新的定制化批量分析会话')
+    batchSessionId.value = null
+    fileList.value = []
+    batchReports.value = []
+    batchStatus.value = 'idle'
+    analysisRequest.value = ''
+  }
+  
   // 加载工作流配置
   await loadFunctionWorkflow()
   
   // 加载历史批量会话列表
   try {
     const response = await getCustomBatchSessions({ page: 1, page_size: 20 })
-    if (response.success && response.data) {
-      operationStore.setBatchSessions(response.data.sessions)
+    const batchResponse = response as unknown as ApiResponse<any>
+    if (batchResponse.success && batchResponse.data) {
+      operationStore.setCustomBatchSessions(batchResponse.data.sessions)
     }
   } catch (error) {
     console.error('加载批量会话列表失败:', error)
@@ -1015,6 +1171,116 @@ onBeforeUnmount(() => {
     
     .upload-section {
       margin-bottom: var(--apple-space-2xl);
+      
+      .upload-status-card {
+        margin-top: 24px;
+        margin-bottom: 24px;
+        animation: fadeIn 0.3s ease-in;
+        
+        .status-card {
+          border: 2px solid var(--el-color-primary-light-8);
+          background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
+          
+          .status-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+            
+            .status-icon {
+              font-size: 32px;
+              color: var(--el-color-primary);
+              
+              .rotating {
+                animation: rotate 2s linear infinite;
+              }
+            }
+            
+            .status-text {
+              flex: 1;
+              
+              h3 {
+                margin: 0 0 8px 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: var(--el-text-color-primary);
+              }
+              
+              p {
+                margin: 0;
+                font-size: 14px;
+                color: var(--el-text-color-regular);
+              }
+            }
+          }
+          
+          .status-progress {
+            margin-top: 16px;
+          }
+          
+          .splitting-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 16px;
+            padding: 12px;
+            background: var(--el-color-primary-light-9);
+            border-radius: 4px;
+            color: var(--el-color-primary);
+            font-size: 14px;
+            
+            .rotating {
+              animation: rotate 1s linear infinite;
+            }
+          }
+        }
+      }
+      
+      .upload-success-card {
+        margin-top: 24px;
+        margin-bottom: 24px;
+        animation: fadeIn 0.5s ease-in;
+        
+        .success-alert {
+          border: 2px solid var(--el-color-success-light-5);
+          background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%);
+          
+          .success-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            
+            .success-icon {
+              font-size: 32px;
+              color: var(--el-color-success);
+              flex-shrink: 0;
+            }
+            
+            .success-text {
+              flex: 1;
+              
+              h3 {
+                margin: 0 0 8px 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: var(--el-text-color-primary);
+              }
+              
+              p {
+                margin: 0;
+                font-size: 14px;
+                color: var(--el-text-color-regular);
+                line-height: 1.6;
+                
+                strong {
+                  color: var(--el-color-primary);
+                  font-weight: 600;
+                }
+              }
+            }
+          }
+        }
+      }
       
       .excel-uploader {
         margin-bottom: var(--apple-space-xl);
@@ -1106,6 +1372,26 @@ onBeforeUnmount(() => {
     .empty-state {
       margin-top: 60px;
     }
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

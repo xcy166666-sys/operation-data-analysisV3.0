@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)",
+      "Bash(git checkout:*)",
+      "Bash(for file in app/api/v1/*.py app/services/*.py app/models/*.py)",
+      "Bash(do python -m py_compile:*)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(docker restart:*)",
+      "Bash(docker exec:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(nslookup:*)",
+      "Bash(git -C /c/Users/chunyu.xing/Desktop/Coding/operation-data-analysis_V3.0 log --oneline -20)",
+      "Bash(git -C /c/Users/chunyu.xing/Desktop/Coding/operation-data-analysis_V3.0 status --short)",
+      "Bash(du:*)",
+      "Bash(git -C /c/Users/chunyu.xing/Desktop/Coding/operation-data-analysis_V3.0 status)",
+      "Bash(netstat:*)",
+      "Bash(docker --version:*)",
+      "Bash(docker-compose:*)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}

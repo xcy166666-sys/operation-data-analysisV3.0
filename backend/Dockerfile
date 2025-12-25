@@ -4,10 +4,12 @@ FROM python:3.11-slim
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
+# 安装系统依赖和中文字体
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
+    fonts-wqy-microhei \
+    fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件
@@ -25,13 +27,13 @@ RUN mkdir -p /var/log/operation-analysis
 # 创建上传目录
 RUN mkdir -p /app/uploads/operation/project_1
 
-# 暴露端口
+# 暴露端口（容器内部仍使用8000）
 EXPOSE 8000
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
-# 启动命令
+# 启动命令（容器内部仍使用8000，外部映射到21800）
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 

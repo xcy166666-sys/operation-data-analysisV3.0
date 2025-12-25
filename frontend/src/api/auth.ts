@@ -47,3 +47,15 @@ export function getCurrentUser() {
   return request.get<ApiResponse<User>>('/auth/me')
 }
 
+export interface ChangePasswordRequest {
+  old_password: string
+  new_password: string
+}
+
+/**
+ * 修改密码
+ */
+export function changePassword(data: ChangePasswordRequest) {
+  return request.put<ApiResponse>('/auth/change-password', data)
+}
+

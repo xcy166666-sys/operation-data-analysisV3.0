@@ -25,6 +25,8 @@ class AnalysisSession(Base):
     # 关系
     user = relationship("User", back_populates="analysis_sessions")
     workflow = relationship("Workflow", back_populates="sessions")
+    versions = relationship("AnalysisSessionVersion", back_populates="session", cascade="all, delete-orphan")
+    dialog_histories = relationship("DialogHistory", back_populates="session", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<AnalysisSession(id={self.id}, title='{self.title}', user_id={self.user_id})>"

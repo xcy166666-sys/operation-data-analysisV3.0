@@ -20,6 +20,15 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('user', JSON.stringify(userData))
   }
   
+  function setUser(userData: User) {
+    user.value = userData
+    localStorage.setItem('user', JSON.stringify(userData))
+  }
+  
+  function logout() {
+    clearAuth()
+  }
+  
   function clearAuth() {
     user.value = null
     token.value = null
@@ -43,6 +52,8 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     isSuperadmin,
     setAuth,
+    setUser,
+    logout,
     clearAuth,
     loadAuth
   }

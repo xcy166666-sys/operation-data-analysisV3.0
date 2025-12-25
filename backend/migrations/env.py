@@ -21,6 +21,7 @@ from app.models.session import AnalysisSession
 from app.models.workflow import Workflow, WorkflowBinding
 from app.models.batch_analysis import BatchAnalysisSession, SheetReport
 from app.models.custom_batch_analysis import CustomBatchAnalysisSession, CustomSheetReport
+from app.models.function_module import FunctionModule
 
 # Alembic配置对象
 config = context.config

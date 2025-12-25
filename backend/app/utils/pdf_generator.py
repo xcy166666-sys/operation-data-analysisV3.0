@@ -123,13 +123,34 @@ def register_chinese_font():
                 continue
     else:
         # Linux/Mac系统，尝试常见的中文字体路径
+        # 使用find命令查找字体文件（如果可用）
+        import subprocess
         linux_font_paths = [
             "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
             "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # 备用字体
             "/System/Library/Fonts/PingFang.ttc",  # macOS
             "/System/Library/Fonts/STHeiti Light.ttc",  # macOS
         ]
+        
+        # 尝试使用find命令查找wqy字体
+        try:
+            result = subprocess.run(
+                ['find', '/usr/share/fonts', '/usr/local/share/fonts', '-name', '*wqy*', '-type', 'f'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                found_fonts = result.stdout.strip().split('\n')
+                for font_path in found_fonts:
+                    if font_path and os.path.exists(font_path):
+                        linux_font_paths.insert(0, font_path)  # 优先使用找到的字体
+                        logger.info(f"[PDF生成] 通过find找到字体: {font_path}")
+        except Exception as e:
+            logger.debug(f"[PDF生成] 使用find查找字体失败: {str(e)}")
+        
         for font_path in linux_font_paths:
             try:
                 if os.path.exists(font_path):
@@ -423,7 +444,11 @@ def generate_report_pdf(
     
     # 图表
     charts = report_content.get("charts", [])
-    if charts:
+    has_charts = bool(charts)
+    has_chart_images = bool(chart_images)
+    
+    # 如果有图表数据或图表图片，添加图表部分
+    if has_charts or has_chart_images:
         try:
             story.append(Paragraph("图表", heading1_style))
             story.append(Spacer(1, 0.2*inch))
@@ -437,12 +462,55 @@ def generate_report_pdf(
                 chart_image_map[img_data['index']] = img_data
             logger.info(f"[PDF生成] 收到 {len(chart_images)} 个图表图片")
         
-        for i, chart in enumerate(charts):
-            try:
-                # 优先使用传入的图片
-                if i in chart_image_map:
-                    img_data = chart_image_map[i]
-                    logger.info(f"[PDF生成] 处理图表 {i}: {img_data.get('title', '')}")
+        # 如果有charts数据，按charts遍历
+        if has_charts:
+            for i, chart in enumerate(charts):
+                try:
+                    # 优先使用传入的图片
+                    if i in chart_image_map:
+                        img_data = chart_image_map[i]
+                        logger.info(f"[PDF生成] 处理图表 {i}: {img_data.get('title', '')}")
+                        
+                        chart_img = create_chart_image_from_base64(
+                            img_data['image_data'],
+                            width=5.5*inch,
+                            height=3.5*inch
+                        )
+                        
+                        if chart_img:
+                            # 添加图表标题
+                            chart_title = str(img_data.get('title', chart.get('title', f'图表{i+1}')))
+                            chart_title_escaped = chart_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                            story.append(Paragraph(f"<b>{chart_title_escaped}</b>", normal_style))
+                            story.append(Spacer(1, 0.1*inch))
+                            
+                            # 添加图片
+                            story.append(chart_img)
+                            story.append(Spacer(1, 0.3*inch))
+                            logger.info(f"[PDF生成] ✓ 成功添加图表图片 - index={i}, title={chart_title}")
+                        else:
+                            # 图片创建失败，显示文本说明
+                            chart_title = str(chart.get('title', '未命名图表')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                            story.append(Paragraph(f"图表 {i+1}: {chart_title} (图片加载失败)", normal_style))
+                            story.append(Spacer(1, 0.1*inch))
+                            logger.warning(f"[PDF生成] ✗ 图表图片创建失败 - index={i}")
+                    else:
+                        # 没有传入图片，显示文本说明
+                        chart_title = str(chart.get('title', '未命名图表')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        story.append(Paragraph(f"图表 {i+1}: {chart_title}", normal_style))
+                        story.append(Spacer(1, 0.1*inch))
+                except Exception as e:
+                    logger.error(f"[PDF生成] 处理图表 {i} 时出错: {str(e)}", exc_info=True)
+                    story.append(Paragraph(f"图表 {i+1}: 处理失败", normal_style))
+                    story.append(Spacer(1, 0.1*inch))
+        # 如果只有图表图片（没有charts数据，比如HTML图表），直接处理图片
+        elif has_chart_images:
+            logger.info(f"[PDF生成] 处理HTML图表图片（无charts数据）")
+            # 按索引排序，确保顺序正确
+            sorted_images = sorted(chart_images, key=lambda x: x.get('index', 0))
+            for img_data in sorted_images:
+                try:
+                    logger.info(f"[PDF生成] 处理图表图片 - index={img_data.get('index', 0)}, title={img_data.get('title', '')}")
                     
                     chart_img = create_chart_image_from_base64(
                         img_data['image_data'],
@@ -452,7 +520,7 @@ def generate_report_pdf(
                     
                     if chart_img:
                         # 添加图表标题
-                        chart_title = str(img_data.get('title', chart.get('title', f'图表{i+1}')))
+                        chart_title = str(img_data.get('title', '数据可视化图表'))
                         chart_title_escaped = chart_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                         story.append(Paragraph(f"<b>{chart_title_escaped}</b>", normal_style))
                         story.append(Spacer(1, 0.1*inch))
@@ -460,26 +528,17 @@ def generate_report_pdf(
                         # 添加图片
                         story.append(chart_img)
                         story.append(Spacer(1, 0.3*inch))
-                        logger.info(f"[PDF生成] ✓ 成功添加图表图片 - index={i}, title={chart_title}")
+                        logger.info(f"[PDF生成] ✓ 成功添加HTML图表图片 - title={chart_title}")
                     else:
-                        # 图片创建失败，显示文本说明
-                        chart_title = str(chart.get('title', '未命名图表')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                        story.append(Paragraph(f"图表 {i+1}: {chart_title} (图片加载失败)", normal_style))
+                        # 图片创建失败
+                        chart_title = str(img_data.get('title', '数据可视化图表'))
+                        story.append(Paragraph(f"{chart_title} (图片加载失败)", normal_style))
                         story.append(Spacer(1, 0.1*inch))
-                        logger.warning(f"[PDF生成] ✗ 图表图片创建失败 - index={i}")
-                else:
-                    # 没有传入图片，显示文本说明
-                    chart_title = str(chart.get('title', '未命名图表')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                    story.append(Paragraph(f"图表 {i+1}: {chart_title}", normal_style))
+                        logger.warning(f"[PDF生成] ✗ HTML图表图片创建失败 - title={chart_title}")
+                except Exception as e:
+                    logger.error(f"[PDF生成] 处理HTML图表图片时出错: {str(e)}", exc_info=True)
+                    story.append(Paragraph("图表图片处理失败", normal_style))
                     story.append(Spacer(1, 0.1*inch))
-                    logger.info(f"[PDF生成] 图表 {i} 无图片数据，显示文本说明")
-            except Exception as e:
-                logger.warning(f"[PDF生成] 处理图表失败: {str(e)}")
-                try:
-                    story.append(Paragraph(f"图表 {i+1} 渲染失败", normal_style))
-                    story.append(Spacer(1, 0.1*inch))
-                except:
-                    pass
     
     # 表格
     tables = report_content.get("tables", [])

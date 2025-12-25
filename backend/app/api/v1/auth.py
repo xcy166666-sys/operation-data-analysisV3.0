@@ -32,18 +32,33 @@ async def login(
     - 返回用户信息和Token
     """
     # 验证用户
+    from loguru import logger
+    logger.info(f"登录尝试: username={login_data.username}")
     user = await AuthService.authenticate_user(db, login_data.username, login_data.password)
     if not user:
+        logger.warning(f"登录失败: username={login_data.username}, 用户不存在或密码错误")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误"
         )
+    logger.info(f"登录成功: username={user.username}, user_id={user.id}")
     
     # 创建Session
-    session_id, session_token = await AuthService.create_session(redis, user)
+    try:
+        session_id, session_token = await AuthService.create_session(redis, user)
+    except Exception as e:
+        logger.error(f"创建Session失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="创建会话失败，请稍后重试"
+        )
     
     # 更新最后登录时间
-    await AuthService.update_last_login(db, user)
+    try:
+        await AuthService.update_last_login(db, user)
+    except Exception as e:
+        logger.error(f"更新最后登录时间失败: {e}", exc_info=True)
+        # 这个错误不影响登录，只记录日志
     
     # 设置Cookie
     response.set_cookie(
