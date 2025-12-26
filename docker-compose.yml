@@ -1,5 +1,21 @@
 version: '3.8'
 
+# ==================== 重要说明 ====================
+# 此Docker配置用于生产部署，不是日常开发使用
+# 
+# 日常开发请使用：
+#   后端：backend/start_local.bat
+#   前端：frontend/npm run dev
+#
+# 仅在以下情况使用Docker：
+#   1. 部署到生产服务器
+#   2. 团队协作需要统一环境
+#   3. 演示给客户
+#
+# 启动Docker：docker-compose up -d
+# 停止Docker：docker-compose down
+# ================================================
+
 services:
   # PostgreSQL数据库
   postgres:

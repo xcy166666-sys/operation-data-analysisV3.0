@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>检查前端认证状态</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h1>前端认证状态检查</h1>
+    <div id="result"></div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        const user = localStorage.getItem('user');
+        
+        const resultDiv = document.getElementById('result');
+        
+        if (token && user) {
+            resultDiv.innerHTML = `
+                <h2 style="color: green;">✅ 已登录</h2>
+                <p><strong>Token:</strong> ${token.substring(0, 20)}...</p>
+                <p><strong>用户信息:</strong></p>
+                <pre>${JSON.stringify(JSON.parse(user), null, 2)}</pre>
+            `;
+        } else {
+            resultDiv.innerHTML = `
+                <h2 style="color: red;">❌ 未登录</h2>
+                <p>localStorage 中没有找到 token 或 user 信息</p>
+                <p>请先访问 <a href="http://localhost:5173/login">登录页面</a> 进行登录</p>
+            `;
+        }
+    </script>
+</body>
+</html>

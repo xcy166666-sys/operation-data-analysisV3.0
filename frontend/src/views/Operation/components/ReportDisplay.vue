@@ -74,7 +74,9 @@
       v-model="showChartDrawer"
       :html-content="report.report_content?.html_charts"
       :title="report.sheet_name || '图表详情'"
+      :show-edit-button="isDialogMode"
       @close="handleChartDrawerClose"
+      @edit-chart="handleEditChart"
     />
     
     <!-- 错误状态 -->
@@ -109,9 +111,14 @@ interface Props {
   report: SheetReportDetail | null
   loading?: boolean
   isCustomBatch?: boolean  // 是否为定制化批量分析
+  isDialogMode?: boolean  // 是否在AI对话模式下
 }
 
 const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  'edit-chart': []
+}>()
 
 const chartInstances = ref<Map<number, echarts.ECharts>>(new Map())
 
@@ -133,6 +140,11 @@ const openChartDrawer = () => {
 // 关闭图表抽屉
 const handleChartDrawerClose = () => {
   showChartDrawer.value = false
+}
+
+// 编辑图表
+const handleEditChart = () => {
+  emit('edit-chart')
 }
 
 // 下载图表

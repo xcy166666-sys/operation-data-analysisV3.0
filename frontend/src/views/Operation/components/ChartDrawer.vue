@@ -83,17 +83,28 @@
         </div>
       </div>
       
-      <!-- 使用iframe渲染HTML内容（更安全，确保script执行） -->
-      <iframe
-        :srcdoc="htmlContent"
-        class="chart-html-iframe"
-        frameborder="0"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        allow="fullscreen"
-        ref="chartContentRef"
-        @load="handleIframeLoad"
-        @error="handleIframeError"
-      ></iframe>
+      <!-- 图表容器，带悬浮式编辑按钮 -->
+      <div class="chart-iframe-container">
+        <!-- 使用iframe渲染HTML内容（更安全，确保script执行） -->
+        <iframe
+          :srcdoc="htmlContent"
+          class="chart-html-iframe"
+          frameborder="0"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          allow="fullscreen"
+          ref="chartContentRef"
+          @load="handleIframeLoad"
+          @error="handleIframeError"
+        ></iframe>
+        
+        <!-- 悬浮式编辑按钮 - 只在AI编辑模式下显示 -->
+        <div v-if="showEditButton" class="chart-edit-overlay" @click="handleEditChart">
+          <div class="edit-button">
+            <el-icon><Edit /></el-icon>
+            <span>编辑图表</span>
+          </div>
+        </div>
+      </div>
     </div>
     
     <!-- 空状态 -->
@@ -106,23 +117,26 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { ElDrawer, ElButton, ElEmpty, ElDropdown, ElDropdownMenu, ElDropdownItem, ElSkeleton, ElIcon, ElMessage } from 'element-plus'
-import { Download, FullScreen, Loading } from '@element-plus/icons-vue'
+import { Download, FullScreen, Loading, Edit } from '@element-plus/icons-vue'
 
 interface Props {
   modelValue: boolean
   htmlContent?: string
   title?: string
+  showEditButton?: boolean  // 是否显示编辑按钮，默认false
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: false,
   htmlContent: '',
-  title: '图表详情'
+  title: '图表详情',
+  showEditButton: false  // 默认不显示编辑按钮
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'close': []
+  'edit-chart': []
 }>()
 
 const visible = computed({
@@ -417,6 +431,11 @@ const handleFullscreen = () => {
   }
 }
 
+// 编辑图表
+const handleEditChart = () => {
+  emit('edit-chart')
+}
+
 // 监听窗口大小变化，调整抽屉尺寸
 if (typeof window !== 'undefined') {
   watch(() => window.innerWidth, () => {
@@ -468,6 +487,16 @@ if (typeof window !== 'undefined') {
   padding: 0;
   background: #fff;
   
+  .chart-iframe-container {
+    position: relative;
+    width: 100%;
+    cursor: pointer;
+  }
+  
+  .chart-iframe-container:hover .chart-edit-overlay {
+    opacity: 1;
+  }
+  
   .chart-html-iframe {
     width: 100%;
     min-height: 800px;
@@ -475,6 +504,48 @@ if (typeof window !== 'undefined') {
     border: none;
     display: block;
     background: white;
+  }
+  
+  /* 悬浮式编辑遮罩 */
+  .chart-edit-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    backdrop-filter: blur(2px);
+    z-index: 10;
+  }
+  
+  .edit-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 32px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 50px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #667eea;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+  
+  .edit-button:hover {
+    background: #ffffff;
+    transform: scale(1.05);
+    box-shadow: 0 6px 30px rgba(102, 126, 234, 0.4);
+  }
+  
+  .edit-button .el-icon {
+    font-size: 20px;
   }
 }
 

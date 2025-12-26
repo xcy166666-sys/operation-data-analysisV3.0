@@ -204,7 +204,8 @@ import {
   Promotion,
   Close,
   Loading,
-  Flag
+  Flag,
+  Edit
 } from '@element-plus/icons-vue'
 import { 
   sendDialogMessageStream,
@@ -231,13 +232,11 @@ interface Props {
   charts: any[]
   conversationId?: string
   reportText?: string  // 当前报告文字
-  htmlCharts?: string  // 当前HTML图表
 }
 
 const props = withDefaults(defineProps<Props>(), {
   conversationId: '',
-  reportText: '',
-  htmlCharts: ''
+  reportText: ''
 })
 
 const emit = defineEmits<{

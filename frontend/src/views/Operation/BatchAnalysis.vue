@@ -36,6 +36,15 @@
           >
             定制化批量分析
           </el-button>
+          <el-button
+            v-if="currentReportDetail"
+            type="success"
+            :icon="ChatDotRound"
+            @click="toggleDialogPanel"
+            :class="{ active: showDialogPanel }"
+          >
+            {{ showDialogPanel ? '隐藏对话' : 'AI对话' }}
+          </el-button>
         </div>
       </div>
 
@@ -78,9 +87,64 @@
           </div>
         </el-upload>
 
-        <!-- 上传进度 -->
-        <div v-if="uploadProgress > 0 && uploadProgress < 100" class="upload-progress">
-          <el-progress :percentage="uploadProgress" :status="uploadProgress === 100 ? 'success' : undefined" />
+        <!-- 上传进度和状态提示 -->
+        <div v-if="batchStatus === 'uploading' || batchStatus === 'splitting'" class="upload-status-card">
+          <el-card shadow="hover" class="status-card">
+            <div class="status-content">
+              <div class="status-icon">
+                <el-icon v-if="batchStatus === 'uploading'" class="rotating">
+                  <UploadFilled />
+                </el-icon>
+                <el-icon v-else-if="batchStatus === 'splitting'" class="rotating">
+                  <Loading />
+                </el-icon>
+              </div>
+              <div class="status-text">
+                <h3 v-if="batchStatus === 'uploading'">正在上传文件...</h3>
+                <h3 v-else-if="batchStatus === 'splitting'">正在拆分Excel文件...</h3>
+                <p v-if="batchStatus === 'uploading'">请稍候，文件正在上传到服务器</p>
+                <p v-else-if="batchStatus === 'splitting'">系统正在将Excel文件拆分为多个Sheet</p>
+              </div>
+            </div>
+            <el-progress 
+              v-if="batchStatus === 'uploading'"
+              :percentage="uploadProgress" 
+              :status="uploadProgress === 100 ? 'success' : undefined"
+              :stroke-width="8"
+              class="status-progress"
+            />
+            <div v-else-if="batchStatus === 'splitting'" class="splitting-indicator">
+              <el-icon class="rotating"><Loading /></el-icon>
+              <span>正在处理中...</span>
+            </div>
+          </el-card>
+        </div>
+        
+        <!-- 上传成功提示（一直显示，只要batchSessionId存在就显示） -->
+        <div v-if="batchSessionId" class="upload-success-card">
+          <el-alert
+            type="success"
+            :closable="false"
+            show-icon
+            class="success-alert"
+          >
+            <template #title>
+              <div class="success-content">
+                <div class="success-icon">
+                  <el-icon><CircleCheckFilled /></el-icon>
+                </div>
+                <div class="success-text">
+                  <h3>文件上传成功！</h3>
+                  <p>
+                    已成功拆分为 <strong>{{ batchReports.length || batchStatusData?.total_sheets || 0 }}</strong> 个Sheet
+                    <template v-if="batchStatus === 'idle'">，请在下方的输入框中输入分析需求，然后点击"提交生成报告"按钮开始分析。</template>
+                    <template v-else-if="(batchStatus as any) === 'analyzing'">，正在分析中...</template>
+                    <template v-else-if="(batchStatus as any) === 'completed'">，分析已完成！</template>
+                  </p>
+                </div>
+              </div>
+            </template>
+          </el-alert>
         </div>
 
         <!-- 分析需求输入区 -->
@@ -183,8 +247,8 @@
         </el-card>
       </div>
 
-      <!-- 报告标签页区域 -->
-      <div class="reports-tabs-container" v-if="batchReports.length > 0">
+      <!-- 报告标签页区域（AI对话模式下隐藏） -->
+      <div class="reports-tabs-container" v-if="batchReports.length > 0 && !showDialogPanel">
         <ReportTabs
           :reports="batchReports"
           :current-index="currentReportIndex"
@@ -194,9 +258,54 @@
 
       <!-- 报告显示区域 -->
       <div class="report-display-container" v-if="currentReportDetail">
+        <!-- AI对话模式：左右分栏布局 -->
+        <div v-if="showDialogPanel" class="dialog-mode-layout">
+          <!-- 左侧：对话面板 -->
+          <div class="dialog-left-panel" :style="{ width: dialogPanelWidth + 'px' }">
+            <DialogPanel
+              v-if="currentReportDetail"
+              ref="dialogPanelRef"
+              :session-id="currentReportDetail.id"
+              :charts="[]"
+              :conversation-id="''"
+              :report-text="currentReportDetail.report_content?.text || ''"
+              @dialog-response="handleDialogResponse"
+              @panel-toggle="toggleDialogPanel"
+              @history-cleared="handleHistoryCleared"
+              @exit-edit="handleExitEdit"
+            />
+          </div>
+          
+          <!-- 拖拽分隔条 -->
+          <div 
+            class="resize-handle"
+            @mousedown="startResize"
+            :title="`拖拽调整宽度 (当前: ${dialogPanelWidth}px)`"
+          >
+            <div class="resize-handle-line"></div>
+            <div v-if="isResizing" class="resize-tooltip">
+              {{ dialogPanelWidth }}px
+            </div>
+          </div>
+          
+          <!-- 右侧：报告展示 -->
+          <div class="dialog-right-panel" ref="reportDisplayRef" :style="{ width: `calc(100% - ${dialogPanelWidth}px - 8px)` }">
+            <ReportDisplay
+              :report="currentReportDetail"
+              :loading="isLoadingReport"
+              :is-dialog-mode="true"
+              @edit-chart="handleEditChartFromReport"
+            />
+          </div>
+        </div>
+        
+        <!-- 普通模式：只显示报告 -->
         <ReportDisplay
+          v-else
           :report="currentReportDetail"
           :loading="isLoadingReport"
+          :is-dialog-mode="false"
+          @edit-chart="handleEditChartFromReport"
         />
       </div>
 
@@ -414,6 +523,19 @@
         </el-button>
       </template>
     </el-dialog>
+    
+    <!-- 图表编辑器（全屏模式） -->
+    <ChartEditorModal
+      v-model="showChartEditor"
+      :chart-html="editingChartHtml"
+      :chart-title="editingChartTitle"
+      :session-id="currentReportDetail?.id"
+      @save="handleChartEditorSave"
+      @cancel="handleChartEditorCancel"
+    />
+    
+    <!-- AI文本编辑工具栏 -->
+    <TextEditToolbar :target-element="'.report-text, .report-content'" />
   </div>
 </template>
 
@@ -426,12 +548,18 @@ import {
   Check,
   DataAnalysis,
   Promotion,
-  ArrowLeft
+  ArrowLeft,
+  ChatDotRound,
+  Loading,
+  CircleCheckFilled
 } from '@element-plus/icons-vue'
 import { useOperationStore } from '@/stores/operation'
 import BatchHistorySidebar from './components/BatchHistorySidebar.vue'
 import ReportTabs from './components/ReportTabs.vue'
 import ReportDisplay from './components/ReportDisplay.vue'
+import DialogPanel from './components/DialogPanel.vue'
+import ChartEditorModal from '@/components/ChartEditorModal.vue'
+import TextEditToolbar from '@/components/TextEditToolbar.vue'
 import {
   uploadBatchExcel,
   startBatchAnalysis,
@@ -492,6 +620,21 @@ const currentReportDetail = ref<SheetReportDetail | null>(null)
 const sidebarRef = ref<InstanceType<typeof BatchHistorySidebar> | null>(null)
 const showSettings = ref(false)
 const saving = ref(false)
+
+// AI对话面板状态
+const showDialogPanel = ref(false)
+const dialogPanelRef = ref<InstanceType<typeof DialogPanel> | null>(null)
+const dialogPanelWidth = ref(450) // 默认450px
+const isResizing = ref(false)
+const startX = ref(0)
+const startWidth = ref(0)
+const reportDisplayRef = ref<HTMLElement | null>(null)
+
+// 图表编辑器状态
+const showChartEditor = ref(false)
+const editingChartHtml = ref('')
+const editingChartTitle = ref('')
+
 const settingsForm = ref({
   platform: 'dify' as 'dify' | 'langchain' | 'ragflow',
   name: '',
@@ -989,6 +1132,188 @@ const getProgressTagType = () => {
   return 'info'
 }
 
+// ========== AI对话功能 ==========
+// 切换对话面板
+const toggleDialogPanel = () => {
+  showDialogPanel.value = !showDialogPanel.value
+}
+
+// 处理对话响应
+const handleDialogResponse = (response: any) => {
+  console.log('[BatchAnalysis] 收到对话响应:', response)
+  
+  if (response.action_type === 'regenerate_report' && currentReportDetail.value) {
+    // 更新报告内容
+    if (response.new_report_text) {
+      currentReportDetail.value.report_content.text = response.new_report_text
+    }
+    if (response.new_html_charts) {
+      currentReportDetail.value.report_content.html_charts = response.new_html_charts
+    }
+    ElMessage.success('报告已更新')
+  }
+}
+
+// 清除对话历史
+const handleHistoryCleared = () => {
+  console.log('[BatchAnalysis] 对话历史已清除')
+}
+
+// 退出编辑模式
+const handleExitEdit = () => {
+  showDialogPanel.value = false
+}
+
+// ========== 文本选择监听（用于AI对话修改） ==========
+const handleTextSelection = () => {
+  // 只在对话面板打开时监听
+  if (!showDialogPanel.value) return
+  
+  const selection = window.getSelection()
+  const selectedText = selection?.toString().trim()
+  
+  if (!selectedText || selectedText.length < 2) {
+    return
+  }
+  
+  // 检查选中的文本是否在报告区域内
+  const reportArea = document.querySelector('.dialog-right-panel')
+  if (!reportArea || !selection?.anchorNode) return
+  
+  if (!reportArea.contains(selection.anchorNode)) {
+    return
+  }
+  
+  console.log('[BatchAnalysis] 检测到文本选择:', selectedText.substring(0, 50) + '...')
+  
+  // 添加高亮动画效果
+  addSelectionHighlight(selection)
+  
+  // 提取上下文
+  const context = extractTextContext(selectedText, reportArea as HTMLElement)
+  
+  // 传递给DialogPanel
+  if (dialogPanelRef.value) {
+    dialogPanelRef.value.setSelectedText(selectedText, context)
+  }
+}
+
+// 添加选中文字的高亮动画
+const addSelectionHighlight = (selection: Selection) => {
+  try {
+    const range = selection.getRangeAt(0)
+    
+    // 创建高亮元素
+    const highlight = document.createElement('span')
+    highlight.className = 'text-selection-highlight'
+    highlight.style.cssText = `
+      background: linear-gradient(120deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+      border-radius: 4px;
+      padding: 2px 0;
+      animation: highlightPulse 0.5s ease-out;
+    `
+    
+    // 包裹选中的内容
+    range.surroundContents(highlight)
+    
+    // 2秒后移除高亮效果
+    setTimeout(() => {
+      if (highlight.parentNode) {
+        const parent = highlight.parentNode
+        while (highlight.firstChild) {
+          parent.insertBefore(highlight.firstChild, highlight)
+        }
+        parent.removeChild(highlight)
+      }
+    }, 2000)
+  } catch (e) {
+    // 如果无法包裹（跨元素选择），忽略错误
+    console.log('[BatchAnalysis] 无法添加高亮效果（可能是跨元素选择）')
+  }
+}
+
+// 提取选中文字的上下文
+const extractTextContext = (selectedText: string, container: HTMLElement) => {
+  const fullText = container.innerText || ''
+  const startIndex = fullText.indexOf(selectedText)
+  
+  if (startIndex === -1) {
+    return {
+      beforeContext: '',
+      afterContext: '',
+      fullText: fullText
+    }
+  }
+  
+  const endIndex = startIndex + selectedText.length
+  const CONTEXT_LENGTH = 500
+  
+  return {
+    beforeContext: fullText.substring(Math.max(0, startIndex - CONTEXT_LENGTH), startIndex),
+    afterContext: fullText.substring(endIndex, Math.min(fullText.length, endIndex + CONTEXT_LENGTH)),
+    fullText: fullText
+  }
+}
+
+// 对话面板宽度调整
+const startResize = (event: MouseEvent) => {
+  isResizing.value = true
+  startX.value = event.clientX
+  startWidth.value = dialogPanelWidth.value
+  
+  document.addEventListener('mousemove', handleResize)
+  document.addEventListener('mouseup', stopResize)
+  event.preventDefault()
+}
+
+const handleResize = (event: MouseEvent) => {
+  if (!isResizing.value) return
+  
+  const deltaX = event.clientX - startX.value
+  const newWidth = startWidth.value + deltaX
+  
+  // 限制宽度范围：300px - 800px
+  if (newWidth >= 300 && newWidth <= 800) {
+    dialogPanelWidth.value = newWidth
+  }
+}
+
+const stopResize = () => {
+  isResizing.value = false
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+}
+
+// ========== 图表编辑功能 ==========
+// 从ReportDisplay打开图表编辑器
+const handleEditChartFromReport = () => {
+  if (currentReportDetail.value?.report_content?.html_charts) {
+    // 关闭对话面板（如果打开）
+    showDialogPanel.value = false
+    // 打开编辑器
+    editingChartHtml.value = currentReportDetail.value.report_content.html_charts
+    editingChartTitle.value = currentReportDetail.value.sheet_name || '数据分析图表'
+    showChartEditor.value = true
+    console.log('[BatchAnalysis] 从报告显示区进入图表编辑模式')
+  } else {
+    ElMessage.warning('当前没有可编辑的图表')
+  }
+}
+
+// 保存图表编辑
+const handleChartEditorSave = (newChartHtml: string) => {
+  if (currentReportDetail.value) {
+    currentReportDetail.value.report_content.html_charts = newChartHtml
+    ElMessage.success('图表已更新')
+  }
+  showChartEditor.value = false
+}
+
+// 取消图表编辑
+const handleChartEditorCancel = () => {
+  showChartEditor.value = false
+}
+
 
 // 生命周期
 onMounted(async () => {
@@ -1019,10 +1344,15 @@ onMounted(async () => {
   } catch (error) {
     console.error('加载批量会话列表失败:', error)
   }
+  
+  // 添加文本选择监听
+  document.addEventListener('mouseup', handleTextSelection)
 })
 
 onBeforeUnmount(() => {
   stopStatusPolling()
+  // 移除文本选择监听
+  document.removeEventListener('mouseup', handleTextSelection)
 })
 </script>
 
@@ -1037,6 +1367,13 @@ onBeforeUnmount(() => {
     padding: var(--apple-space-2xl);
     overflow-y: auto;
     background: var(--apple-bg-primary);
+    position: relative; // 为绝对定位的dialog-mode-layout提供定位上下文
+    
+    // 对话模式时，隐藏padding和overflow，让对话布局占满整个区域
+    &:has(.dialog-mode-layout) {
+      padding: 0;
+      overflow: hidden;
+    }
     
     .content-header {
       display: flex;
@@ -1077,6 +1414,117 @@ onBeforeUnmount(() => {
       
       .excel-uploader {
         margin-bottom: var(--apple-space-xl);
+      }
+      
+      .upload-status-card {
+        margin-top: 24px;
+        margin-bottom: 24px;
+        animation: fadeIn 0.3s ease-in;
+        
+        .status-card {
+          border: 2px solid var(--el-color-primary-light-8);
+          background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
+          
+          .status-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 16px;
+            
+            .status-icon {
+              font-size: 48px;
+              color: var(--el-color-primary);
+              
+              .rotating {
+                animation: rotate 2s linear infinite;
+              }
+            }
+            
+            .status-text {
+              flex: 1;
+              
+              h3 {
+                margin: 0 0 8px 0;
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--el-text-color-primary);
+              }
+              
+              p {
+                margin: 0;
+                font-size: 14px;
+                color: var(--el-text-color-secondary);
+              }
+            }
+          }
+          
+          .status-progress {
+            margin-top: 16px;
+          }
+          
+          .splitting-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--el-color-primary-light-9);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--el-color-primary);
+            
+            .rotating {
+              font-size: 20px;
+              animation: rotate 2s linear infinite;
+            }
+          }
+        }
+      }
+      
+      .upload-success-card {
+        margin-top: 24px;
+        margin-bottom: 24px;
+        animation: fadeIn 0.3s ease-in;
+        
+        .success-alert {
+          border: 2px solid var(--el-color-success-light-8);
+          background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%);
+          
+          .success-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            
+            .success-icon {
+              font-size: 32px;
+              color: var(--el-color-success);
+              flex-shrink: 0;
+            }
+            
+            .success-text {
+              flex: 1;
+              
+              h3 {
+                margin: 0 0 8px 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: var(--el-text-color-primary);
+              }
+              
+              p {
+                margin: 0;
+                font-size: 14px;
+                line-height: 1.6;
+                color: var(--el-text-color-regular);
+                
+                strong {
+                  color: var(--el-color-success);
+                  font-weight: 600;
+                }
+              }
+            }
+          }
+        }
       }
       
       .upload-progress {
@@ -1161,6 +1609,106 @@ onBeforeUnmount(() => {
     .empty-state {
       margin-top: 60px;
     }
+    
+    // AI对话模式布局 - 占满整个主内容区（参考单文件分析设计）
+    .dialog-mode-layout {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      gap: 0;
+      background: #ffffff;
+      overflow: hidden;
+      z-index: 10;
+    }
+    
+    .dialog-left-panel {
+      height: 100%;
+      background: #f8f9fa;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    
+    .dialog-right-panel {
+      height: 100%;
+      overflow-y: auto;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      padding: 40px;
+    }
+    
+    .resize-handle {
+      width: 8px;
+      height: 100%;
+      background: #f0f0f0;
+      cursor: col-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+      transition: background-color 0.2s;
+      
+      &:hover {
+        background: #e0e0e0;
+      }
+      
+      &:active {
+        background: #d0d0d0;
+      }
+      
+      &:hover .resize-handle-line {
+        background: #666;
+      }
+    }
+    
+    .resize-handle-line {
+      width: 2px;
+      height: 40px;
+      background: #999;
+      border-radius: 1px;
+    }
+    
+    .resize-tooltip {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 1000;
+    }
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>
